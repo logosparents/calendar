@@ -171,7 +171,7 @@
           other: { icon: 'fa-solid fa-wand-magic-sparkles text-purple-500 text-lg', color: 'bg-purple-100 text-purple-600 border-purple-200', dot: 'bg-purple-500' },
         };
 
-        // Securely parse global Firebase Config with zero-crash safe fallback
+        // Securely parse global Firebase Config with zero-crash safe fallback using window context
         let useFirebase = false;
         let db = null;
         let auth = null;
@@ -179,8 +179,8 @@
         let appId = 'default-app-id';
 
         try {
-            const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
-            const rawAppId = typeof __app_id !== 'undefined' ? __app_id : null;
+            const rawConfig = typeof window !== 'undefined' && window.__firebase_config ? window.__firebase_config : null;
+            const rawAppId = typeof window !== 'undefined' && window.__app_id ? window.__app_id : null;
 
             if (rawConfig && rawConfig.trim() !== "") {
                 const firebaseConfig = JSON.parse(rawConfig);
@@ -200,8 +200,9 @@
         const initAuth = async () => {
             if (!useFirebase) return;
             try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    const userCred = await signInWithCustomToken(auth, __initial_auth_token);
+                const rawToken = typeof window !== 'undefined' && window.__initial_auth_token ? window.__initial_auth_token : null;
+                if (rawToken) {
+                    const userCred = await signInWithCustomToken(auth, rawToken);
                     currentUser = userCred.user;
                 } else {
                     const userCred = await signInAnonymously(auth);
@@ -219,7 +220,7 @@
         }
 
         // Register Alpine App with Firestore configuration integrated
-        document.addEventListener('alpine:init', () => {
+        const registerAlpineApp = () => {
             Alpine.data('plannerApp', () => ({
                 lang: 'zh',
                 viewMode: 'day', 
@@ -1126,11 +1127,24 @@
                     }
                 }
             }));
+        };
+
+        // Standard event listener registration
+        document.addEventListener('alpine:init', () => {
+            registerAlpineApp();
         });
+
+        // Double Safeguard: In case Alpine has already executed before this Module script ran
+        if (window.Alpine) {
+            registerAlpineApp();
+        } else {
+            // Dynamically inject Alpine to guarantee it executes AFTER this module script registers 'plannerApp'
+            const alpineScript = document.createElement('script');
+            alpineScript.src = 'https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js';
+            alpineScript.defer = true;
+            document.head.appendChild(alpineScript);
+        }
     </script>
-    
-    <!-- Alpine.js is loaded AFTER our scripts are defined -->
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 </head>
 <body class="bg-amber-50 text-slate-800 min-h-screen pb-12 flex flex-col items-center select-none"
       x-data="plannerApp()"
