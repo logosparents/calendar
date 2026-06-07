@@ -84,7 +84,19 @@
             deleteSuccess: "活動已刪除！",
             resetData: "一鍵重設所有資料",
             confirmReset: "確定要重設所有資料嗎？這將永久刪除所有日程、完成進度及名字記錄，且無法復原！",
-            resetSuccess: "資料已完全重設！🧹"
+            resetSuccess: "資料已完全重設！🧹",
+            // Cloud Sync Dictionary items
+            syncTitle: "☁️ 雲端跨手機同步房間",
+            syncPlaceholder: "輸入專屬同步密碼 (例: ChanFamily2026)",
+            uploadBtn: "同步上載到雲端 📤",
+            downloadBtn: "從雲端下載最新 📥",
+            autoSyncLabel: "打開網頁時自動同步日程",
+            syncingText: "正在與雲端同步... ⏳",
+            uploadSuccess: "資料已成功同步到雲端！🚀",
+            downloadSuccess: "已下載並套用雲端最新日程！✨",
+            syncEmptyError: "請先輸入同步密碼房間號！🔑",
+            syncFetchError: "雲端暫無此房間數據，請先由家端上載！",
+            lastSyncedText: "上次同步"
           },
           en: {
             title: "Kiddo Summer Planner",
@@ -129,7 +141,19 @@
             deleteSuccess: "Activity deleted!",
             resetData: "One-click Reset All Data",
             confirmReset: "Are you sure you want to reset all data? This will permanently delete all schedules, progress, and names!",
-            resetSuccess: "All data reset successfully! 🧹"
+            resetSuccess: "All data reset successfully! 🧹",
+            // Cloud Sync Dictionary items
+            syncTitle: "☁️ Cloud Cross-Device Sync",
+            syncPlaceholder: "Enter unique Sync Code (e.g. ChanFamily2026)",
+            uploadBtn: "Upload to Cloud 📤",
+            downloadBtn: "Download Latest 📥",
+            autoSyncLabel: "Auto-sync schedule on open",
+            syncingText: "Syncing with cloud... ⏳",
+            uploadSuccess: "Schedules uploaded to cloud successfully! 🚀",
+            downloadSuccess: "Downloaded latest schedule from cloud! ✨",
+            syncEmptyError: "Please enter a sync code first! 🔑",
+            syncFetchError: "No cloud data found. Please upload from parent device first!",
+            lastSyncedText: "Last Synced"
           }
         };
 
@@ -145,7 +169,7 @@
         function plannerApp() {
             return {
                 lang: 'zh',
-                viewMode: 'day', // Changed default view mode to 'day' to see schedule immediately
+                viewMode: 'day', // Default view mode is 'day' to see schedule immediately
                 currentDate: new Date(),
                 events: [],
                 completedInstances: [],
@@ -155,8 +179,15 @@
                 toastMessage: '',
                 translatingField: '', // Track which field is translating
                 showResetConfirm: false, // Control the warning banner display
+                showDeleteConfirm: false, // Custom inline modal-less delete confirmation state
                 t: t,
                 CATEGORIES: CATEGORIES,
+
+                // Cloud Sync variables
+                syncRoomId: '',
+                autoSync: false,
+                lastSyncedTime: '',
+                isCloudSyncing: false,
                 
                 eventForm: {
                     title_zh: '',
@@ -173,16 +204,24 @@
                     repeatUntil: ''
                 },
 
-                init() {
+                async init() {
                     // Load localstorage parameters
                     const savedEvents = localStorage.getItem('kiddo_events');
                     const savedCompleted = localStorage.getItem('kiddo_completed');
                     const savedLang = localStorage.getItem('kiddo_lang');
                     const savedKidName = localStorage.getItem('kiddo_kid_name');
+                    
+                    // Cloud Sync config load
+                    const savedSyncRoom = localStorage.getItem('kiddo_sync_room');
+                    const savedAutoSync = localStorage.getItem('kiddo_auto_sync') === 'true';
+                    const savedLastSynced = localStorage.getItem('kiddo_last_synced');
 
                     if (savedCompleted) this.completedInstances = JSON.parse(savedCompleted);
                     if (savedLang) this.lang = savedLang;
                     if (savedKidName) this.kidName = savedKidName;
+                    if (savedSyncRoom) this.syncRoomId = savedSyncRoom;
+                    this.autoSync = savedAutoSync;
+                    if (savedLastSynced) this.lastSyncedTime = savedLastSynced;
 
                     if (savedEvents) {
                         let parsedEvents = JSON.parse(savedEvents);
@@ -202,6 +241,11 @@
                             }
                             return evt;
                         });
+                    }
+
+                    // If auto-sync is enabled and sync room is filled, fetch from cloud immediately on load
+                    if (this.autoSync && this.syncRoomId) {
+                        await this.downloadFromCloud(true); // silent load
                     }
                 },
 
@@ -394,14 +438,21 @@
                     this.events = [];
                     this.completedInstances = [];
                     this.kidName = '';
+                    this.syncRoomId = '';
+                    this.autoSync = false;
+                    this.lastSyncedTime = '';
                     this.saveState();
                     localStorage.removeItem('kiddo_kid_name');
+                    localStorage.removeItem('kiddo_sync_room');
+                    localStorage.removeItem('kiddo_auto_sync');
+                    localStorage.removeItem('kiddo_last_synced');
                     this.showResetConfirm = false;
                     this.showToast(this.t[this.lang].resetSuccess);
                 },
 
                 resetForm(customDate) {
                     this.selectedEvent = null;
+                    this.showDeleteConfirm = false;
                     this.eventForm = {
                         title_zh: '',
                         title_en: '',
@@ -425,6 +476,7 @@
 
                 openEditModal(event) {
                     this.selectedEvent = event;
+                    this.showDeleteConfirm = false;
                     this.eventForm = {
                         title_zh: event.title_zh || '',
                         title_en: event.title_en || '',
@@ -440,6 +492,99 @@
                         repeatUntil: event.repeatUntil || ''
                     };
                     this.isModalOpen = true;
+                },
+
+                // ☁️ CLOUD SYNC UPSTREAM (PUSH DATA TO CLOUD)
+                async uploadToCloud() {
+                    const cleanRoom = this.syncRoomId?.trim();
+                    if (!cleanRoom) {
+                        this.showToast(this.t[this.lang].syncEmptyError);
+                        return;
+                    }
+                    
+                    this.isCloudSyncing = true;
+                    localStorage.setItem('kiddo_sync_room', cleanRoom);
+                    localStorage.setItem('kiddo_auto_sync', this.autoSync);
+
+                    const payload = {
+                        events: this.events,
+                        completedInstances: this.completedInstances,
+                        kidName: this.kidName,
+                        updatedAt: new Date().toISOString()
+                    };
+
+                    try {
+                        // Using public free KV Store kvdb.io dedicated bucket for high speed syncing
+                        const url = `https://kvdb.io/s8Y39qgWpHwTzBghjXN1L6/${encodeURIComponent(cleanRoom)}`;
+                        const response = await fetch(url, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) throw new Error("Cloud push failed");
+
+                        const nowStr = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                        this.lastSyncedTime = nowStr;
+                        localStorage.setItem('kiddo_last_synced', nowStr);
+                        
+                        this.showToast(this.t[this.lang].uploadSuccess);
+                    } catch (err) {
+                        console.error(err);
+                        this.showToast(this.lang === 'zh' ? '上載失敗，請檢查網路連線！' : 'Upload failed, please check internet!');
+                    } finally {
+                        this.isCloudSyncing = false;
+                    }
+                },
+
+                // ☁️ CLOUD SYNC DOWNSTREAM (PULL DATA FROM CLOUD)
+                async downloadFromCloud(isSilent = false) {
+                    const cleanRoom = this.syncRoomId?.trim();
+                    if (!cleanRoom) {
+                        if (!isSilent) this.showToast(this.t[this.lang].syncEmptyError);
+                        return;
+                    }
+
+                    this.isCloudSyncing = true;
+                    localStorage.setItem('kiddo_sync_room', cleanRoom);
+                    localStorage.setItem('kiddo_auto_sync', this.autoSync);
+
+                    try {
+                        const url = `https://kvdb.io/s8Y39qgWpHwTzBghjXN1L6/${encodeURIComponent(cleanRoom)}`;
+                        const response = await fetch(url);
+                        
+                        if (response.status === 404) {
+                            if (!isSilent) this.showToast(this.t[this.lang].syncFetchError);
+                            return;
+                        }
+                        if (!response.ok) throw new Error("Cloud pull failed");
+
+                        const cloudData = await response.json();
+                        
+                        if (cloudData && Array.isArray(cloudData.events)) {
+                            this.events = cloudData.events;
+                            this.completedInstances = cloudData.completedInstances || [];
+                            this.kidName = cloudData.kidName || '';
+                            
+                            this.saveState();
+                            this.saveKidName();
+
+                            const nowStr = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                            this.lastSyncedTime = nowStr;
+                            localStorage.setItem('kiddo_last_synced', nowStr);
+                            
+                            if (!isSilent) this.showToast(this.t[this.lang].downloadSuccess);
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        if (!isSilent) this.showToast(this.lang === 'zh' ? '下載失敗，請檢查網路連線！' : 'Download failed, please check internet!');
+                    } finally {
+                        this.isCloudSyncing = false;
+                    }
+                },
+
+                toggleAutoSync() {
+                    localStorage.setItem('kiddo_auto_sync', this.autoSync);
                 },
 
                 // Dynamic progress calculation based on active view mode
@@ -627,14 +772,12 @@
                 },
 
                 handleDeleteEvent(eventId) {
-                    if (confirm(this.t[this.lang].confirmDelete)) {
-                        this.events = this.events.filter(evt => evt.id !== eventId);
-                        this.completedInstances = this.completedInstances.filter(key => !key.startsWith(eventId + '_'));
-                        this.saveState();
-                        this.isModalOpen = false;
-                        this.resetForm();
-                        this.showToast(this.t[this.lang].deleteSuccess);
-                    }
+                    this.events = this.events.filter(evt => evt.id !== eventId);
+                    this.completedInstances = this.completedInstances.filter(key => !key.startsWith(eventId + '_'));
+                    this.saveState();
+                    this.isModalOpen = false;
+                    this.resetForm();
+                    this.showToast(this.t[this.lang].deleteSuccess);
                 },
 
                 shareToWhatsApp() {
@@ -977,6 +1120,68 @@
     <!-- Main Workspace -->
     <main class="w-full max-w-lg px-4 mt-5 flex-1">
 
+        <!-- ☁️ CLOUD SYNC ROOM CONTROL PANEL (BRAND NEW FEATURE FOR REAL-TIME COLLABORATION) -->
+        <div class="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-[2rem] border-4 border-indigo-200 p-5 shadow-md mb-4 relative overflow-hidden">
+            <div class="absolute top-0 right-0 p-3 opacity-10 pointer-events-none">
+                <i class="fa-solid fa-cloud-arrow-up text-5xl text-indigo-800"></i>
+            </div>
+            
+            <h3 class="font-black text-lg text-indigo-950 mb-2.5 flex items-center gap-2">
+                <i class="fa-solid fa-cloud text-indigo-600 animate-pulse"></i>
+                <span x-text="t[lang].syncTitle"></span>
+            </h3>
+
+            <!-- Room Sync Code Field -->
+            <div class="flex flex-col gap-3">
+                <div class="relative w-full">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-400">
+                        <i class="fa-solid fa-key"></i>
+                    </span>
+                    <input type="text" 
+                           x-model="syncRoomId" 
+                           :placeholder="t[lang].syncPlaceholder"
+                           class="w-full bg-white border-2 border-indigo-200 focus:border-indigo-400 text-indigo-900 rounded-2xl pl-10 pr-4 py-3 text-sm font-bold focus:outline-none transition-all shadow-inner" />
+                </div>
+
+                <!-- Sync buttons -->
+                <div class="grid grid-cols-2 gap-3.5">
+                    <button type="button" 
+                            @click="uploadToCloud()"
+                            :disabled="isCloudSyncing"
+                            class="bg-indigo-600 hover:bg-indigo-700 text-white font-black py-3 px-3.5 rounded-2xl border-b-4 border-indigo-800 flex items-center justify-center gap-1.5 shadow-md active:border-b-0 active:translate-y-1 transition-all text-sm disabled:opacity-50 disabled:pointer-events-none">
+                        <i class="fa-solid fa-cloud-arrow-up text-base" x-show="!isCloudSyncing"></i>
+                        <i class="fa-solid fa-spinner animate-spin text-base" x-show="isCloudSyncing"></i>
+                        <span x-text="t[lang].uploadBtn"></span>
+                    </button>
+
+                    <button type="button" 
+                            @click="downloadFromCloud()"
+                            :disabled="isCloudSyncing"
+                            class="bg-white hover:bg-indigo-100 text-indigo-700 font-black py-3 px-3.5 rounded-2xl border-2 border-indigo-300 border-b-4 flex items-center justify-center gap-1.5 shadow-md active:border-b-2 active:translate-y-0.5 transition-all text-sm disabled:opacity-50 disabled:pointer-events-none">
+                        <i class="fa-solid fa-cloud-arrow-down text-base" x-show="!isCloudSyncing"></i>
+                        <i class="fa-solid fa-spinner animate-spin text-base" x-show="isCloudSyncing"></i>
+                        <span x-text="t[lang].downloadBtn"></span>
+                    </button>
+                </div>
+
+                <!-- Auto-Sync toggle & Last synced timestamp -->
+                <div class="flex flex-wrap justify-between items-center gap-2 pt-2.5 border-t border-dashed border-indigo-200 text-xs">
+                    <label class="flex items-center gap-2 font-black text-indigo-800 cursor-pointer">
+                        <input type="checkbox" 
+                               x-model="autoSync"
+                               @change="toggleAutoSync()"
+                               class="rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 w-4.5 h-4.5" />
+                        <span x-text="t[lang].autoSyncLabel"></span>
+                    </label>
+
+                    <span class="font-extrabold text-indigo-500 flex items-center gap-1" x-show="lastSyncedTime">
+                        <i class="fa-regular fa-clock"></i>
+                        <span x-text="t[lang].lastSyncedText + ': ' + lastSyncedTime"></span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
         <!-- Controls Block (Views toggle & Add Activity) -->
         <div class="bg-white rounded-[2rem] border-4 border-amber-200 p-4 shadow-sm mb-4">
             
@@ -1022,7 +1227,7 @@
                 </div>
             </div>
             
-            <!-- 📊 Dynamic Completion Progress (%) Segment - BRAND NEW FEATURE -->
+            <!-- 📊 Dynamic Completion Progress (%) Segment -->
             <div class="mt-4 p-4 bg-amber-50/70 border-2 border-dashed border-amber-300 rounded-2xl text-left">
                 <div class="flex justify-between items-center mb-1.5">
                     <span class="font-black text-slate-700 text-base flex items-center gap-1.5">
@@ -1158,7 +1363,7 @@
                 </button>
             </div>
 
-            <!-- Detailed list for this single day - Enlarged fonts for supreme mobile legibility -->
+            <!-- Detailed list for this single day -->
             <div class="bg-white rounded-[2rem] border-4 border-amber-200 p-5 shadow-md">
                 <h3 class="font-black text-xl text-slate-800 border-b-2 border-dashed border-amber-100 pb-3 mb-4 flex items-center gap-2">
                     <span class="text-2xl">🎒</span>
@@ -1460,11 +1665,31 @@
                 </div>
               </div>
 
+              <!-- Modern Custom Delete Confirmation instead of system confirm() -->
+              <div x-show="showDeleteConfirm" 
+                   x-transition:enter="transition ease-out duration-150"
+                   class="bg-red-50 border-2 border-red-300 rounded-2xl p-4 text-left space-y-3">
+                  <p class="text-sm font-black text-red-700 flex items-start gap-2">
+                      <i class="fa-solid fa-triangle-exclamation text-lg text-red-500 animate-bounce"></i>
+                      <span x-text="t[lang].confirmDelete"></span>
+                  </p>
+                  <div class="flex gap-2.5">
+                      <button type="button" @click="showDeleteConfirm = false"
+                              class="flex-1 bg-white hover:bg-slate-100 text-slate-700 border-2 border-slate-200 font-bold py-2 rounded-xl text-xs">
+                          <span x-text="t[lang].cancel"></span>
+                      </button>
+                      <button type="button" @click="handleDeleteEvent(selectedEvent.id)"
+                              class="flex-1 bg-red-600 hover:bg-red-700 text-white font-black py-2 rounded-xl text-xs shadow-md">
+                          <span x-text="lang === 'zh' ? '確認刪除' : 'Confirm Delete'"></span>
+                      </button>
+                  </div>
+              </div>
+
               <!-- Modal Submit Options -->
-              <div class="flex gap-3 pt-3">
+              <div class="flex gap-3 pt-3" x-show="!showDeleteConfirm">
                 <button type="button"
                         x-show="selectedEvent"
-                        @click="handleDeleteEvent(selectedEvent.id)"
+                        @click="showDeleteConfirm = true"
                         class="bg-red-100 hover:bg-red-200 text-red-600 font-extrabold p-4 rounded-2xl border border-red-200 flex items-center justify-center shadow-md transition active:scale-90">
                     <i class="fa-solid fa-trash-can text-xl"></i>
                 </button>
