@@ -38,7 +38,47 @@
     </style>
 
     <!-- Script Logic Implementation FIRST so Alpine can access it -->
-    <script>
+    <script type="module">
+        // Import Firebase modules for secure and reliable cloud syncing
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+        // Securely parse global Firebase Config provided by the execution environment
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "",
+            authDomain: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: ""
+        };
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        let currentUser = null;
+
+        // Perform authentication FIRST as mandated by Rule 3
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    const userCred = await signInWithCustomToken(auth, __initial_auth_token);
+                    currentUser = userCred.user;
+                } else {
+                    const userCred = await signInAnonymously(auth);
+                    currentUser = userCred.user;
+                }
+            } catch (error) {
+                console.error("Firebase auth failed: ", error);
+            }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+        });
+
         // Multi-language dictionary data
         const t = {
           zh: {
@@ -95,7 +135,7 @@
             uploadSuccess: "資料已成功同步到雲端！🚀",
             downloadSuccess: "已下載並套用雲端最新日程！✨",
             syncEmptyError: "請先輸入同步密碼房間號！🔑",
-            syncFetchError: "雲端暫無此房間數據，請先由家端上載！",
+            syncFetchError: "雲端暫無此房間數據，請先由家長端上載！",
             lastSyncedText: "上次同步"
           },
           en: {
@@ -166,10 +206,11 @@
           other: { icon: 'fa-solid fa-wand-magic-sparkles text-purple-500 text-lg', color: 'bg-purple-100 text-purple-600 border-purple-200', dot: 'bg-purple-500' },
         };
 
-        function plannerApp() {
-            return {
+        // Register Alpine App with Firestore configuration integrated
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('plannerApp', () => ({
                 lang: 'zh',
-                viewMode: 'day', // Default view mode is 'day' to see schedule immediately
+                viewMode: 'day', 
                 currentDate: new Date(),
                 events: [],
                 completedInstances: [],
@@ -177,9 +218,9 @@
                 isModalOpen: false,
                 selectedEvent: null,
                 toastMessage: '',
-                translatingField: '', // Track which field is translating
-                showResetConfirm: false, // Control the warning banner display
-                showDeleteConfirm: false, // Custom inline modal-less delete confirmation state
+                translatingField: '', 
+                showResetConfirm: false, 
+                showDeleteConfirm: false, 
                 t: t,
                 CATEGORIES: CATEGORIES,
 
@@ -242,6 +283,9 @@
                             return evt;
                         });
                     }
+
+                    // Strict Auth Before Action (Rule 3)
+                    await initAuth();
 
                     // If auto-sync is enabled and sync room is filled, fetch from cloud immediately on load
                     if (this.autoSync && this.syncRoomId) {
@@ -494,7 +538,7 @@
                     this.isModalOpen = true;
                 },
 
-                // ☁️ CLOUD SYNC UPSTREAM (PUSH DATA TO CLOUD)
+                // ☁️ CLOUD SYNC UPSTREAM (PUSH DATA TO SECURE FIRESTORE - Rule 1 & Rule 3)
                 async uploadToCloud() {
                     const cleanRoom = this.syncRoomId?.trim();
                     if (!cleanRoom) {
@@ -514,15 +558,17 @@
                     };
 
                     try {
-                        // Using public free KV Store kvdb.io dedicated bucket for high speed syncing
-                        const url = `https://kvdb.io/s8Y39qgWpHwTzBghjXN1L6/${encodeURIComponent(cleanRoom)}`;
-                        const response = await fetch(url, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
+                        // Ensure authentication is completed (Rule 3)
+                        if (!currentUser) {
+                            await initAuth();
+                        }
+                        if (!currentUser) {
+                            throw new Error("Authentication failed");
+                        }
 
-                        if (!response.ok) throw new Error("Cloud push failed");
+                        // Write to the strictly assigned Firebase path (Rule 1)
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'syncRooms', cleanRoom);
+                        await setDoc(docRef, payload);
 
                         const nowStr = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                         this.lastSyncedTime = nowStr;
@@ -530,14 +576,14 @@
                         
                         this.showToast(this.t[this.lang].uploadSuccess);
                     } catch (err) {
-                        console.error(err);
-                        this.showToast(this.lang === 'zh' ? '上載失敗，請檢查網路連線！' : 'Upload failed, please check internet!');
+                        console.error("Cloud push failed:", err);
+                        this.showToast(this.lang === 'zh' ? '上載失敗，請檢查網絡連線！' : 'Upload failed, please check connection!');
                     } finally {
                         this.isCloudSyncing = false;
                     }
                 },
 
-                // ☁️ CLOUD SYNC DOWNSTREAM (PULL DATA FROM CLOUD)
+                // ☁️ CLOUD SYNC DOWNSTREAM (PULL DATA FROM SECURE FIRESTORE - Rule 1 & Rule 3)
                 async downloadFromCloud(isSilent = false) {
                     const cleanRoom = this.syncRoomId?.trim();
                     if (!cleanRoom) {
@@ -550,16 +596,24 @@
                     localStorage.setItem('kiddo_auto_sync', this.autoSync);
 
                     try {
-                        const url = `https://kvdb.io/s8Y39qgWpHwTzBghjXN1L6/${encodeURIComponent(cleanRoom)}`;
-                        const response = await fetch(url);
+                        // Ensure authentication is completed (Rule 3)
+                        if (!currentUser) {
+                            await initAuth();
+                        }
+                        if (!currentUser) {
+                            throw new Error("Authentication failed");
+                        }
+
+                        // Read from strictly assigned Firebase path (Rule 1)
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'syncRooms', cleanRoom);
+                        const docSnap = await getDoc(docRef);
                         
-                        if (response.status === 404) {
+                        if (!docSnap.exists()) {
                             if (!isSilent) this.showToast(this.t[this.lang].syncFetchError);
                             return;
                         }
-                        if (!response.ok) throw new Error("Cloud pull failed");
 
-                        const cloudData = await response.json();
+                        const cloudData = docSnap.data();
                         
                         if (cloudData && Array.isArray(cloudData.events)) {
                             this.events = cloudData.events;
@@ -576,8 +630,8 @@
                             if (!isSilent) this.showToast(this.t[this.lang].downloadSuccess);
                         }
                     } catch (err) {
-                        console.error(err);
-                        if (!isSilent) this.showToast(this.lang === 'zh' ? '下載失敗，請檢查網路連線！' : 'Download failed, please check internet!');
+                        console.error("Cloud pull failed:", err);
+                        if (!isSilent) this.showToast(this.lang === 'zh' ? '下載失敗，請檢查網絡連線！' : 'Download failed, please check connection!');
                     } finally {
                         this.isCloudSyncing = false;
                     }
@@ -1055,8 +1109,8 @@
                         this.showToast(this.lang === 'zh' ? '解析 ICS 檔案失敗！' : 'Failed to parse ICS file!');
                     }
                 }
-            }
-        }
+            }));
+        });
     </script>
     
     <!-- Alpine.js is loaded AFTER our scripts are defined -->
@@ -1120,7 +1174,7 @@
     <!-- Main Workspace -->
     <main class="w-full max-w-lg px-4 mt-5 flex-1">
 
-        <!-- ☁️ CLOUD SYNC ROOM CONTROL PANEL (BRAND NEW FEATURE FOR REAL-TIME COLLABORATION) -->
+        <!-- ☁️ CLOUD SYNC ROOM CONTROL PANEL (SECURE FIRESTORE ENGINE COMPLIANT WITH RULE 1) -->
         <div class="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-[2rem] border-4 border-indigo-200 p-5 shadow-md mb-4 relative overflow-hidden">
             <div class="absolute top-0 right-0 p-3 opacity-10 pointer-events-none">
                 <i class="fa-solid fa-cloud-arrow-up text-5xl text-indigo-800"></i>
