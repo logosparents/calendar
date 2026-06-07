@@ -146,16 +146,20 @@
                 isModalOpen: false,
                 selectedEvent: null,
                 toastMessage: '',
+                translatingField: '', // Track which field is translating
                 t: t,
                 CATEGORIES: CATEGORIES,
                 
                 eventForm: {
-                    title: '',
+                    title_zh: '',
+                    title_en: '',
                     date: '',
                     startTime: '09:00',
                     endTime: '10:00',
-                    location: '',
-                    notes: '',
+                    location_zh: '',
+                    location_en: '',
+                    notes_zh: '',
+                    notes_en: '',
                     category: 'sports',
                     recurrence: 'none',
                     repeatUntil: ''
@@ -168,17 +172,36 @@
                     const savedLang = localStorage.getItem('kiddo_lang');
                     const savedKidName = localStorage.getItem('kiddo_kid_name');
 
-                    if (savedEvents) this.events = JSON.parse(savedEvents);
                     if (savedCompleted) this.completedInstances = JSON.parse(savedCompleted);
                     if (savedLang) this.lang = savedLang;
                     if (savedKidName) this.kidName = savedKidName;
+
+                    if (savedEvents) {
+                        let parsedEvents = JSON.parse(savedEvents);
+                        // Upgrade data schema: Migrate single title/location/notes to bilingual format
+                        this.events = parsedEvents.map(evt => {
+                            if (evt.title && evt.title_zh === undefined) {
+                                const isChinese = /[\u4e00-\u9fa5]/.test(evt.title);
+                                return {
+                                    ...evt,
+                                    title_zh: isChinese ? evt.title : '',
+                                    title_en: isChinese ? '' : evt.title,
+                                    location_zh: isChinese ? (evt.location || '') : '',
+                                    location_en: isChinese ? '' : (evt.location || ''),
+                                    notes_zh: isChinese ? (evt.notes || '') : '',
+                                    notes_en: isChinese ? '' : (evt.notes || '')
+                                };
+                            }
+                            return evt;
+                        });
+                    }
                 },
 
                 showToast(msg) {
                     this.toastMessage = msg;
                     setTimeout(() => {
                         this.toastMessage = '';
-                    }, 4000);
+                    }, 3500);
                 },
 
                 toggleLanguage() {
@@ -331,6 +354,15 @@
                     }).sort((a, b) => a.startTime.localeCompare(b.startTime));
                 },
 
+                getEventText(evt, field) {
+                    // Smart display fallback if one language is missing
+                    if (this.lang === 'zh') {
+                        return evt[`${field}_zh`] || evt[`${field}_en`] || '';
+                    } else {
+                        return evt[`${field}_en`] || evt[`${field}_zh`] || '';
+                    }
+                },
+
                 isEventCompleted(eventId, dateStr) {
                     return this.completedInstances.includes(`${eventId}_${dateStr}`);
                 },
@@ -353,12 +385,15 @@
                 resetForm(customDate) {
                     this.selectedEvent = null;
                     this.eventForm = {
-                        title: '',
+                        title_zh: '',
+                        title_en: '',
                         date: customDate || this.formatDateString(this.currentDate),
                         startTime: '09:00',
                         endTime: '10:00',
-                        location: '',
-                        notes: '',
+                        location_zh: '',
+                        location_en: '',
+                        notes_zh: '',
+                        notes_en: '',
                         category: 'sports',
                         recurrence: 'none',
                         repeatUntil: ''
@@ -373,12 +408,15 @@
                 openEditModal(event) {
                     this.selectedEvent = event;
                     this.eventForm = {
-                        title: event.title,
+                        title_zh: event.title_zh || '',
+                        title_en: event.title_en || '',
                         date: event.date,
                         startTime: event.startTime,
                         endTime: event.endTime,
-                        location: event.location || '',
-                        notes: event.notes || '',
+                        location_zh: event.location_zh || '',
+                        location_en: event.location_en || '',
+                        notes_zh: event.notes_zh || '',
+                        notes_en: event.notes_en || '',
                         category: event.category || 'sports',
                         recurrence: event.recurrence || 'none',
                         repeatUntil: event.repeatUntil || ''
@@ -386,11 +424,50 @@
                     this.isModalOpen = true;
                 },
 
+                // Free Public Translation API Integration (MyMemory)
+                async autoTranslate(field) {
+                    const sourceLang = this.lang === 'zh' ? 'zh' : 'en';
+                    const targetLang = sourceLang === 'zh' ? 'en' : 'zh';
+                    
+                    const sourceText = this.eventForm[`${field}_${sourceLang}`]?.trim();
+                    if (!sourceText) {
+                        this.showToast(this.lang === 'zh' ? '請先填寫當前語言欄位！' : 'Please fill in current language field first!');
+                        return;
+                    }
+
+                    this.translatingField = field;
+                    const langPair = sourceLang === 'zh' ? 'zh-HK|en-GB' : 'en-GB|zh-HK';
+                    
+                    try {
+                        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(sourceText)}&langpair=${langPair}`);
+                        const data = await res.json();
+                        if (data && data.responseData && data.responseData.translatedText) {
+                            this.eventForm[`${field}_${targetLang}`] = data.responseData.translatedText;
+                            this.showToast(this.lang === 'zh' ? '翻譯完成！✨' : 'Translated successfully! ✨');
+                        } else {
+                            throw new Error();
+                        }
+                    } catch (err) {
+                        this.showToast(this.lang === 'zh' ? '翻譯忙碌中，請手動填寫！' : 'Translation busy, please fill manually!');
+                    } finally {
+                        this.translatingField = '';
+                    }
+                },
+
                 handleSubmitEvent() {
-                    if (!this.eventForm.title || !this.eventForm.date) {
+                    const titleText = this.lang === 'zh' ? this.eventForm.title_zh : this.eventForm.title_en;
+                    if (!titleText || !this.eventForm.date) {
                         this.showToast(this.t[this.lang].required);
                         return;
                     }
+
+                    // Smart Fallback if only one language title is filled
+                    if (!this.eventForm.title_zh) this.eventForm.title_zh = this.eventForm.title_en;
+                    if (!this.eventForm.title_en) this.eventForm.title_en = this.eventForm.title_zh;
+                    if (!this.eventForm.location_zh) this.eventForm.location_zh = this.eventForm.location_en;
+                    if (!this.eventForm.location_en) this.eventForm.location_en = this.eventForm.location_zh;
+                    if (!this.eventForm.notes_zh) this.eventForm.notes_zh = this.eventForm.notes_en;
+                    if (!this.eventForm.notes_en) this.eventForm.notes_en = this.eventForm.notes_zh;
 
                     if (this.selectedEvent) {
                         // Edit item
@@ -414,7 +491,6 @@
                 handleDeleteEvent(eventId) {
                     if (confirm(this.t[this.lang].confirmDelete)) {
                         this.events = this.events.filter(evt => evt.id !== eventId);
-                        // Clean up completed markers associated with this event
                         this.completedInstances = this.completedInstances.filter(key => !key.startsWith(eventId + '_'));
                         this.saveState();
                         this.isModalOpen = false;
@@ -439,10 +515,14 @@
 
                     dayEvents.forEach((evt, idx) => {
                         const isDone = this.isEventCompleted(evt.id, dateStr);
+                        const displayTitle = this.getEventText(evt, 'title');
+                        const displayLoc = this.getEventText(evt, 'location');
+                        const displayNotes = this.getEventText(evt, 'notes');
+
                         text += `${idx + 1}. ${isDone ? '✅ [Done] ' : '⏰ '}*${evt.startTime} - ${evt.endTime}*\n`;
-                        text += `   🎈 *${evt.title}*\n`;
-                        if (evt.location) text += `   📍 ${evt.location}\n`;
-                        if (evt.notes) text += `   📝 ${evt.notes}\n`;
+                        text += `   🎈 *${displayTitle}*\n`;
+                        if (displayLoc) text += `   📍 ${displayLoc}\n`;
+                        if (displayNotes) text += `   📝 ${displayNotes}\n`;
                         text += `\n`;
                     });
 
@@ -465,14 +545,19 @@
                         const startDateTime = evt.date.replace(/-/g, '') + 'T' + evt.startTime.replace(':', '') + '00';
                         const endDateTime = evt.date.replace(/-/g, '') + 'T' + evt.endTime.replace(':', '') + '00';
                         
+                        // Select localized summary/details for ICS format
+                        const displayTitle = this.getEventText(evt, 'title');
+                        const displayLoc = this.getEventText(evt, 'location');
+                        const displayNotes = this.getEventText(evt, 'notes');
+
                         icsContent += "BEGIN:VEVENT\n";
                         icsContent += `UID:${evt.id}@kiddosummerplanner\n`;
                         icsContent += `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z\n`;
                         icsContent += `DTSTART:${startDateTime}\n`;
                         icsContent += `DTEND:${endDateTime}\n`;
-                        icsContent += `SUMMARY:${evt.title}\n`;
-                        if (evt.location) icsContent += `LOCATION:${evt.location}\n`;
-                        if (evt.notes) icsContent += `DESCRIPTION:${evt.notes}\n`;
+                        icsContent += `SUMMARY:${displayTitle}\n`;
+                        if (displayLoc) icsContent += `LOCATION:${displayLoc}\n`;
+                        if (displayNotes) icsContent += `DESCRIPTION:${displayNotes}\n`;
 
                         if (evt.recurrence === 'weekly') {
                             let rule = "RRULE:FREQ=WEEKLY";
@@ -508,7 +593,6 @@
                     link.click();
                 },
 
-                // General Entry for File Uploads (Supports .json backup & .ics Google calendar import)
                 handleFileImport(e) {
                     const file = e.target.files[0];
                     if (!file) return;
@@ -518,19 +602,15 @@
 
                     reader.onload = (event) => {
                         const fileContent = event.target.result;
-                        
                         if (fileName.endsWith('.ics')) {
-                            // Process ICS Google Calendar format
                             this.importFromICS(fileContent);
                         } else if (fileName.endsWith('.json')) {
-                            // Process JSON app backup format
                             this.importFromJSON(fileContent);
                         } else {
                             this.showToast(this.lang === 'zh' ? '不支援此檔案格式！請使用 .json 或 .ics 檔案' : 'Unsupported format! Use .json or .ics file');
                         }
                     };
                     reader.readAsText(file);
-                    // Reset input target value so the same file can be uploaded again
                     e.target.value = '';
                 },
 
@@ -538,12 +618,25 @@
                     try {
                         const parsed = JSON.parse(jsonText);
                         if (parsed.events) {
-                            // Merge and prevent exact duplicated ids
                             const existingIds = new Set(this.events.map(e => e.id));
-                            const newEvents = parsed.events.filter(e => !existingIds.has(e.id));
+                            const newEvents = parsed.events.filter(e => !existingIds.has(e.id)).map(evt => {
+                                // Double check bilingual compatibility for imported JSON
+                                if (evt.title && evt.title_zh === undefined) {
+                                    const isChinese = /[\u4e00-\u9fa5]/.test(evt.title);
+                                    return {
+                                        ...evt,
+                                        title_zh: isChinese ? evt.title : '',
+                                        title_en: isChinese ? '' : evt.title,
+                                        location_zh: isChinese ? (evt.location || '') : '',
+                                        location_en: isChinese ? '' : (evt.location || ''),
+                                        notes_zh: isChinese ? (evt.notes || '') : '',
+                                        notes_en: isChinese ? '' : (evt.notes || '')
+                                    };
+                                }
+                                return evt;
+                            });
                             
                             this.events = [...this.events, ...newEvents];
-                            // Merge completed statuses
                             this.completedInstances = Array.from(new Set([...this.completedInstances, ...(parsed.completedInstances || [])]));
                             
                             this.saveState();
@@ -559,7 +652,6 @@
                 importFromICS(icsText) {
                     try {
                         const importedEvents = [];
-                        // Handle Line Folding standard in iCalendar format
                         const unfoldedText = icsText.replace(/\r?\n[ \t]/g, '');
                         const lines = unfoldedText.split(/\r?\n/);
                         
@@ -569,22 +661,33 @@
                             line = line.trim();
                             if (line === 'BEGIN:VEVENT') {
                                 currentEvent = {
-                                    title: '',
+                                    title_zh: '',
+                                    title_en: '',
                                     date: '',
                                     startTime: '09:00',
                                     endTime: '10:00',
-                                    location: '',
-                                    notes: '',
+                                    location_zh: '',
+                                    location_en: '',
+                                    notes_zh: '',
+                                    notes_en: '',
                                     category: 'other',
                                     recurrence: 'none',
                                     repeatUntil: ''
                                 };
                             } else if (line === 'END:VEVENT' && currentEvent) {
-                                if (currentEvent.title && currentEvent.date) {
+                                if ((currentEvent.title_zh || currentEvent.title_en) && currentEvent.date) {
                                     currentEvent.id = crypto.randomUUID();
                                     
-                                    // Smart Category Guessing based on common Summer camp keywords (Bilingual)
-                                    const titleLower = currentEvent.title.toLowerCase();
+                                    // Make sure both languages are set (fallbacks)
+                                    if (!currentEvent.title_zh) currentEvent.title_zh = currentEvent.title_en;
+                                    if (!currentEvent.title_en) currentEvent.title_en = currentEvent.title_zh;
+                                    if (!currentEvent.location_zh) currentEvent.location_zh = currentEvent.location_en;
+                                    if (!currentEvent.location_en) currentEvent.location_en = currentEvent.location_zh;
+                                    if (!currentEvent.notes_zh) currentEvent.notes_zh = currentEvent.notes_en;
+                                    if (!currentEvent.notes_en) currentEvent.notes_en = currentEvent.notes_zh;
+
+                                    // Smart Category Guessing
+                                    const titleLower = (currentEvent.title_zh + ' ' + currentEvent.title_en).toLowerCase();
                                     if (/swim|sport|ball|basketball|football|tennis|soccer|run|dance|gym|camp|運動|體育|游泳|球|跑|跳舞|夏令營/.test(titleLower)) {
                                         currentEvent.category = 'sports';
                                     } else if (/art|music|piano|paint|draw|guitar|violin|craft|cello|flute|琴|畫|藝術|音樂|吉他|手工|小提琴/.test(titleLower)) {
@@ -599,26 +702,35 @@
                                 }
                                 currentEvent = null;
                             } else if (currentEvent) {
-                                // Match Key/Value pair
                                 const colonIndex = line.indexOf(':');
                                 if (colonIndex !== -1) {
                                     const keyPart = line.substring(0, colonIndex);
                                     let value = line.substring(colonIndex + 1);
-                                    
-                                    // Strip out standard ICS slash escapes
                                     value = value.replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\n/g, '\n').replace(/\\/g, '');
-                                    
-                                    // Clean key parameter extensions e.g., DTSTART;VALUE=DATE
                                     const key = keyPart.split(';')[0].toUpperCase();
 
                                     if (key === 'SUMMARY') {
-                                        currentEvent.title = value;
+                                        const isChinese = /[\u4e00-\u9fa5]/.test(value);
+                                        if (isChinese) {
+                                            currentEvent.title_zh = value;
+                                        } else {
+                                            currentEvent.title_en = value;
+                                        }
                                     } else if (key === 'LOCATION') {
-                                        currentEvent.location = value;
+                                        const isChinese = /[\u4e00-\u9fa5]/.test(value);
+                                        if (isChinese) {
+                                            currentEvent.location_zh = value;
+                                        } else {
+                                            currentEvent.location_en = value;
+                                        }
                                     } else if (key === 'DESCRIPTION') {
-                                        currentEvent.notes = value;
+                                        const isChinese = /[\u4e00-\u9fa5]/.test(value);
+                                        if (isChinese) {
+                                            currentEvent.notes_zh = value;
+                                        } else {
+                                            currentEvent.notes_en = value;
+                                        }
                                     } else if (key === 'DTSTART') {
-                                        // e.g., 20260601T090000Z or 20260601
                                         const datePart = value.substring(0, 8);
                                         if (datePart.length === 8) {
                                             currentEvent.date = `${datePart.substring(0, 4)}-${datePart.substring(4, 6)}-${datePart.substring(6, 8)}`;
@@ -635,7 +747,6 @@
                                     } else if (key === 'RRULE') {
                                         if (value.toUpperCase().includes('FREQ=WEEKLY')) {
                                             currentEvent.recurrence = 'weekly';
-                                            // Extract UNTIL date if defined
                                             const untilMatch = value.match(/UNTIL=([0-9]{8})/i);
                                             if (untilMatch) {
                                                 const untilVal = untilMatch[1];
@@ -844,7 +955,7 @@
                                     <div :class="isEventCompleted(evt.id, formatDateString(day)) ? 'line-through text-slate-400' : 'font-extrabold text-slate-700'"
                                          class="truncate">
                                         <i :class="getCategoryConfig(evt.category).icon" class="text-xs mr-1 text-slate-400"></i>
-                                        <span x-text="evt.startTime + ' ' + evt.title"></span>
+                                        <span x-text="evt.startTime + ' ' + getEventText(evt, 'title')"></span>
                                     </div>
                                 </div>
 
@@ -923,7 +1034,7 @@
 
                                 <h4 :class="isEventCompleted(evt.id, formatDateString(currentDate)) ? 'line-through text-slate-400' : 'font-black text-slate-800'"
                                     class="text-lg break-words leading-snug"
-                                    x-text="evt.title">
+                                    x-text="getEventText(evt, 'title')">
                                 </h4>
 
                                 <div class="text-slate-500 text-sm font-bold space-y-1.5">
@@ -931,13 +1042,13 @@
                                         <i class="fa-regular fa-clock text-amber-500 shrink-0"></i>
                                         <span x-text="evt.startTime + ' - ' + evt.endTime"></span>
                                     </p>
-                                    <p x-show="evt.location" class="flex items-center gap-2">
+                                    <p x-show="getEventText(evt, 'location')" class="flex items-center gap-2">
                                         <i class="fa-solid fa-location-dot text-rose-500 shrink-0"></i>
-                                        <span class="truncate" x-text="evt.location"></span>
+                                        <span class="truncate" x-text="getEventText(evt, 'location')"></span>
                                     </p>
-                                    <p x-show="evt.notes" class="flex items-start gap-2 mt-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs text-slate-600">
+                                    <p x-show="getEventText(evt, 'notes')" class="flex items-start gap-2 mt-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs text-slate-600">
                                         <i class="fa-regular fa-file-lines text-slate-400 shrink-0 mt-0.5"></i>
-                                        <span class="whitespace-pre-wrap" x-text="evt.notes"></span>
+                                        <span class="whitespace-pre-wrap" x-text="getEventText(evt, 'notes')"></span>
                                     </p>
                                 </div>
                             </div>
@@ -1037,16 +1148,30 @@
                 </div>
               </div>
 
-              <!-- Activity Title -->
-              <div>
-                <label class="block text-sm font-black text-slate-700 mb-1">
-                    <span x-text="t[lang].activityName"></span> *
-                </label>
-                <input type="text"
-                       required
-                       :placeholder="lang === 'zh' ? '例如：鋼琴班 / 游泳課' : 'e.g. Piano Lesson / Swimming'"
-                       x-model="eventForm.title"
-                       class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-base" />
+              <!-- Activity Title (Bilingual Field) -->
+              <div class="bg-amber-50/50 p-3 rounded-2xl border-2 border-dashed border-amber-200 space-y-3">
+                <div class="flex justify-between items-center">
+                    <span class="text-xs font-black text-amber-800">✨ 填寫活動名稱 (Bilingual Fields)</span>
+                    <button type="button" @click="autoTranslate('title')"
+                            class="text-[10px] bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold px-2 py-1 rounded-lg flex items-center gap-1 transition">
+                        <i class="fa-solid fa-wand-magic-sparkles" :class="translatingField === 'title' ? 'animate-spin' : ''"></i>
+                        <span x-text="lang === 'zh' ? '一鍵翻譯 ⇄ Auto-Translate' : 'Translate ⇄ 一鍵翻譯'"></span>
+                    </button>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-0.5">繁體中文 (ZH) *</label>
+                    <input type="text"
+                           placeholder="例如：鋼琴班"
+                           x-model="eventForm.title_zh"
+                           class="w-full p-2 rounded-lg border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-0.5">English (EN) *</label>
+                    <input type="text"
+                           placeholder="e.g. Piano Lesson"
+                           x-model="eventForm.title_en"
+                           class="w-full p-2 rounded-lg border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+                </div>
               </div>
 
               <!-- Date Selection & Recurrence -->
@@ -1100,22 +1225,40 @@
                 </div>
               </div>
 
-              <!-- Location Details -->
-              <div>
-                <label class="block text-sm font-black text-slate-700 mb-1" x-text="t[lang].location"></label>
-                <input type="text"
-                       :placeholder="lang === 'zh' ? '填寫上課地址或名稱' : 'Address or Center Name'"
-                       x-model="eventForm.location"
-                       class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+              <!-- Location Details (Bilingual Field) -->
+              <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                <div class="flex justify-between items-center">
+                    <span class="text-xs font-black text-slate-600">📍 填寫上課地點 (Location)</span>
+                    <button type="button" @click="autoTranslate('location')"
+                            class="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-2 py-0.5 rounded flex items-center gap-1 transition">
+                        <i class="fa-solid fa-language" :class="translatingField === 'location' ? 'animate-pulse' : ''"></i>
+                        <span>Translate ⇄ 翻譯</span>
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="text" placeholder="繁中: 柴灣體育館" x-model="eventForm.location_zh"
+                           class="p-2 rounded-lg border border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-xs" />
+                    <input type="text" placeholder="English: Sports Center" x-model="eventForm.location_en"
+                           class="p-2 rounded-lg border border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-xs" />
+                </div>
               </div>
 
-              <!-- Notes Info -->
-              <div>
-                <label class="block text-sm font-black text-slate-700 mb-1" x-text="t[lang].notes"></label>
-                <textarea rows="2"
-                          :placeholder="lang === 'zh' ? '例如：需帶泳帽、記得帶課本' : 'e.g. Bring swim cap, bring textbook'"
-                          x-model="eventForm.notes"
-                          class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm"></textarea>
+              <!-- Notes Info (Bilingual Field) -->
+              <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                <div class="flex justify-between items-center">
+                    <span class="text-xs font-black text-slate-600">📝 填寫備註 (Notes / Remarks)</span>
+                    <button type="button" @click="autoTranslate('notes')"
+                            class="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-2 py-0.5 rounded flex items-center gap-1 transition">
+                        <i class="fa-solid fa-language" :class="translatingField === 'notes' ? 'animate-pulse' : ''"></i>
+                        <span>Translate ⇄ 翻譯</span>
+                    </button>
+                </div>
+                <div class="space-y-1.5">
+                    <textarea rows="1" placeholder="繁中: 帶泳帽與毛巾" x-model="eventForm.notes_zh"
+                              class="w-full p-2 rounded-lg border border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-xs"></textarea>
+                    <textarea rows="1" placeholder="English: Bring cap & towel" x-model="eventForm.notes_en"
+                              class="w-full p-2 rounded-lg border border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-xs"></textarea>
+                </div>
               </div>
 
               <!-- Modal Submit Options -->
