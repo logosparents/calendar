@@ -39,45 +39,10 @@
 
     <!-- Script Logic Implementation FIRST so Alpine can access it -->
     <script type="module">
-        // Import Firebase modules for secure and reliable cloud syncing
+        // Safe imports for Firebase modules
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { getFirestore, doc, setDoc, getDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
-
-        // Securely parse global Firebase Config provided by the execution environment
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-            apiKey: "",
-            authDomain: "",
-            projectId: "",
-            storageBucket: "",
-            messagingSenderId: "",
-            appId: ""
-        };
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-        let currentUser = null;
-
-        // Perform authentication FIRST as mandated by Rule 3
-        const initAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    const userCred = await signInWithCustomToken(auth, __initial_auth_token);
-                    currentUser = userCred.user;
-                } else {
-                    const userCred = await signInAnonymously(auth);
-                    currentUser = userCred.user;
-                }
-            } catch (error) {
-                console.error("Firebase auth failed: ", error);
-            }
-        };
-
-        onAuthStateChanged(auth, (user) => {
-            currentUser = user;
-        });
 
         // Multi-language dictionary data
         const t = {
@@ -183,7 +148,7 @@
             confirmReset: "Are you sure you want to reset all data? This will permanently delete all schedules, progress, and names!",
             resetSuccess: "All data reset successfully! 🧹",
             // Cloud Sync Dictionary items
-            syncTitle: "☁️ Cloud Cross-Device Sync",
+            syncTitle: "Cloud Cross-Device Sync",
             syncPlaceholder: "Enter unique Sync Code (e.g. ChanFamily2026)",
             uploadBtn: "Upload to Cloud 📤",
             downloadBtn: "Download Latest 📥",
@@ -206,6 +171,53 @@
           other: { icon: 'fa-solid fa-wand-magic-sparkles text-purple-500 text-lg', color: 'bg-purple-100 text-purple-600 border-purple-200', dot: 'bg-purple-500' },
         };
 
+        // Securely parse global Firebase Config with zero-crash safe fallback
+        let useFirebase = false;
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let appId = 'default-app-id';
+
+        try {
+            const rawConfig = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+            const rawAppId = typeof __app_id !== 'undefined' ? __app_id : null;
+
+            if (rawConfig && rawConfig.trim() !== "") {
+                const firebaseConfig = JSON.parse(rawConfig);
+                if (firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId) {
+                    const app = initializeApp(firebaseConfig);
+                    auth = getAuth(app);
+                    db = getFirestore(app);
+                    appId = rawAppId || 'default-app-id';
+                    useFirebase = true;
+                }
+            }
+        } catch (e) {
+            console.warn("Firebase was bypassed or config is empty. App will run in secure Local Mode.", e);
+        }
+
+        // Perform authentication FIRST as mandated by Rule 3 (if Firebase is enabled)
+        const initAuth = async () => {
+            if (!useFirebase) return;
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    const userCred = await signInWithCustomToken(auth, __initial_auth_token);
+                    currentUser = userCred.user;
+                } else {
+                    const userCred = await signInAnonymously(auth);
+                    currentUser = userCred.user;
+                }
+            } catch (error) {
+                console.error("Firebase auth failed: ", error);
+            }
+        };
+
+        if (useFirebase && auth) {
+            onAuthStateChanged(auth, (user) => {
+                currentUser = user;
+            });
+        }
+
         // Register Alpine App with Firestore configuration integrated
         document.addEventListener('alpine:init', () => {
             Alpine.data('plannerApp', () => ({
@@ -225,6 +237,7 @@
                 CATEGORIES: CATEGORIES,
 
                 // Cloud Sync variables
+                useFirebase: useFirebase, // Share Firebase status with UI
                 syncRoomId: '',
                 autoSync: false,
                 lastSyncedTime: '',
@@ -285,11 +298,12 @@
                     }
 
                     // Strict Auth Before Action (Rule 3)
-                    await initAuth();
-
-                    // If auto-sync is enabled and sync room is filled, fetch from cloud immediately on load
-                    if (this.autoSync && this.syncRoomId) {
-                        await this.downloadFromCloud(true); // silent load
+                    if (useFirebase) {
+                        await initAuth();
+                        // If auto-sync is enabled and sync room is filled, fetch from cloud immediately on load
+                        if (this.autoSync && this.syncRoomId) {
+                            await this.downloadFromCloud(true); // silent load
+                        }
                     }
                 },
 
@@ -540,6 +554,7 @@
 
                 // ☁️ CLOUD SYNC UPSTREAM (PUSH DATA TO SECURE FIRESTORE - Rule 1 & Rule 3)
                 async uploadToCloud() {
+                    if (!useFirebase) return;
                     const cleanRoom = this.syncRoomId?.trim();
                     if (!cleanRoom) {
                         this.showToast(this.t[this.lang].syncEmptyError);
@@ -585,6 +600,7 @@
 
                 // ☁️ CLOUD SYNC DOWNSTREAM (PULL DATA FROM SECURE FIRESTORE - Rule 1 & Rule 3)
                 async downloadFromCloud(isSilent = false) {
+                    if (!useFirebase) return;
                     const cleanRoom = this.syncRoomId?.trim();
                     if (!cleanRoom) {
                         if (!isSilent) this.showToast(this.t[this.lang].syncEmptyError);
@@ -1175,6 +1191,7 @@
     <main class="w-full max-w-lg px-4 mt-5 flex-1">
 
         <!-- ☁️ CLOUD SYNC ROOM CONTROL PANEL (SECURE FIRESTORE ENGINE COMPLIANT WITH RULE 1) -->
+        <!-- Will adjust display based on environment: Shows active Cloud Sync or helpful warning for pure local deployments -->
         <div class="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-[2rem] border-4 border-indigo-200 p-5 shadow-md mb-4 relative overflow-hidden">
             <div class="absolute top-0 right-0 p-3 opacity-10 pointer-events-none">
                 <i class="fa-solid fa-cloud-arrow-up text-5xl text-indigo-800"></i>
@@ -1185,8 +1202,8 @@
                 <span x-text="t[lang].syncTitle"></span>
             </h3>
 
-            <!-- Room Sync Code Field -->
-            <div class="flex flex-col gap-3">
+            <!-- IF FIREBASE ENABLED: Normal database operations -->
+            <div x-show="useFirebase" class="flex flex-col gap-3">
                 <div class="relative w-full">
                     <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-indigo-400">
                         <i class="fa-solid fa-key"></i>
@@ -1233,6 +1250,13 @@
                         <span x-text="t[lang].lastSyncedText + ': ' + lastSyncedTime"></span>
                     </span>
                 </div>
+            </div>
+
+            <!-- IF DEPLOYED MANUALLY (GITHUB PAGES): Graceful local backup advice -->
+            <div x-show="!useFirebase" class="text-xs text-indigo-800 font-bold leading-relaxed bg-indigo-100/60 p-3.5 rounded-2xl border border-indigo-200">
+                <i class="fa-solid fa-circle-info text-indigo-600 mr-1 text-sm animate-bounce"></i>
+                <span x-show="lang === 'zh'">雲端即時同步已安全離線。在自建網站中，您可使用頁面最下方的<b>「備份資料 (JSON)」</b>與<b>「匯入資料」</b>按鈕直接在手機間傳輸與同步您所有的暑期日程！</span>
+                <span x-show="lang !== 'zh'">Cloud Sync is offline. On self-hosted platforms, please use the <b>"Backup Data (JSON)"</b> and <b>"Import Data"</b> options at the bottom of the page to easily transfer schedules between devices!</span>
             </div>
         </div>
 
@@ -1744,7 +1768,7 @@
                 <button type="button"
                         x-show="selectedEvent"
                         @click="showDeleteConfirm = true"
-                        class="bg-red-100 hover:bg-red-200 text-red-600 font-extrabold p-4 rounded-2xl border border-red-200 flex items-center justify-center shadow-md transition active:scale-90">
+                        class="bg-red-100 hover:bg-red-200 text-red-600 font-extrabold p-4 rounded-2xl border border-red-200 flex items-center justify-center shadow-md transition active:scale-95">
                     <i class="fa-solid fa-trash-can text-xl"></i>
                 </button>
                 
