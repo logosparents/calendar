@@ -501,7 +501,24 @@
                     }
                 },
 
-                // Upgraded Translation Engine using Google Translate Free API Client (CORS-friendly, extremely robust)
+                // Low-level high reliability Google translation helper function
+                async translateText(text, sl, tl) {
+                    if (!text || !text.trim()) return '';
+                    try {
+                        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`;
+                        const res = await fetch(url);
+                        if (!res.ok) throw new Error('API fetch failed');
+                        const data = await res.json();
+                        if (data && data[0]) {
+                            return data[0].map(sentence => sentence[0]).join('');
+                        }
+                    } catch (e) {
+                        console.error("Translation helper error: ", e);
+                    }
+                    return '';
+                },
+
+                // Upgraded Manual Translation Engine (CORS-friendly, robust)
                 async autoTranslate(field) {
                     const currentFieldLang = this.lang === 'zh' ? 'zh' : 'en';
                     const targetFieldLang = this.lang === 'zh' ? 'en' : 'zh';
@@ -514,44 +531,74 @@
 
                     this.translatingField = field;
                     
-                    // Maps standard languages for Google Translate client API
                     const sl = this.lang === 'zh' ? 'zh-TW' : 'en';
                     const tl = this.lang === 'zh' ? 'en' : 'zh-TW';
                     
                     try {
-                        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(sourceText)}`;
-                        const res = await fetch(url);
-                        if (!res.ok) throw new Error('API request failed');
-                        
-                        const data = await res.json();
-                        if (data && data[0]) {
-                            // Map over potential multi-sentence structures and merge them
-                            const translatedText = data[0].map(sentence => sentence[0]).join('');
-                            if (translatedText) {
-                                this.eventForm[`${field}_target_lang`.replace('target_lang', targetFieldLang)] = translatedText;
-                                this.showToast(this.lang === 'zh' ? '翻譯完成！✨' : 'Translated successfully! ✨');
-                            } else {
-                                throw new Error('Empty result');
-                            }
+                        const translatedText = await this.translateText(sourceText, sl, tl);
+                        if (translatedText) {
+                            this.eventForm[`${field}_${targetFieldLang}`] = translatedText;
+                            this.showToast(this.lang === 'zh' ? '翻譯完成！✨' : 'Translated successfully! ✨');
                         } else {
-                            throw new Error('Invalid structure');
+                            throw new Error('Empty translation output');
                         }
                     } catch (err) {
-                        console.error("Translation Error: ", err);
                         this.showToast(this.lang === 'zh' ? '翻譯系統忙碌，請手動填寫！' : 'Translation failed, please type manually!');
                     } finally {
                         this.translatingField = '';
                     }
                 },
 
-                handleSubmitEvent() {
-                    const titleText = this.lang === 'zh' ? this.eventForm.title_zh : this.eventForm.title_en;
-                    if (!titleText || !this.eventForm.date) {
+                // Upgraded Asynchronous Event Submission with automatic translation on missing fields
+                async handleSubmitEvent() {
+                    const hasTitleZH = this.eventForm.title_zh?.trim();
+                    const hasTitleEN = this.eventForm.title_en?.trim();
+
+                    // Validation check: At least one language must have a title
+                    if (!hasTitleZH && !hasTitleEN) {
                         this.showToast(this.t[this.lang].required);
                         return;
                     }
 
-                    // Smart Fallback if only one language title is filled
+                    if (!this.eventForm.date) {
+                        this.showToast(this.t[this.lang].required);
+                        return;
+                    }
+
+                    this.showToast(this.lang === 'zh' ? '正在自動翻譯與儲存... ⏳' : 'Translating and saving... ⏳');
+
+                    // 1. Auto-Translate Title if empty on one side
+                    if (hasTitleZH && !hasTitleEN) {
+                        const translation = await this.translateText(this.eventForm.title_zh, 'zh-TW', 'en');
+                        if (translation) this.eventForm.title_en = translation;
+                    } else if (hasTitleEN && !hasTitleZH) {
+                        const translation = await this.translateText(this.eventForm.title_en, 'en', 'zh-TW');
+                        if (translation) this.eventForm.title_zh = translation;
+                    }
+
+                    // 2. Auto-Translate Location if empty on one side
+                    const hasLocZH = this.eventForm.location_zh?.trim();
+                    const hasLocEN = this.eventForm.location_en?.trim();
+                    if (hasLocZH && !hasLocEN) {
+                        const translation = await this.translateText(this.eventForm.location_zh, 'zh-TW', 'en');
+                        if (translation) this.eventForm.location_en = translation;
+                    } else if (hasLocEN && !hasLocZH) {
+                        const translation = await this.translateText(this.eventForm.location_en, 'en', 'zh-TW');
+                        if (translation) this.eventForm.location_zh = translation;
+                    }
+
+                    // 3. Auto-Translate Notes if empty on one side
+                    const hasNotesZH = this.eventForm.notes_zh?.trim();
+                    const hasNotesEN = this.eventForm.notes_en?.trim();
+                    if (hasNotesZH && !hasNotesEN) {
+                        const translation = await this.translateText(this.eventForm.notes_zh, 'zh-TW', 'en');
+                        if (translation) this.eventForm.notes_en = translation;
+                    } else if (hasNotesEN && !hasNotesZH) {
+                        const translation = await this.translateText(this.eventForm.notes_en, 'en', 'zh-TW');
+                        if (translation) this.eventForm.notes_zh = translation;
+                    }
+
+                    // Strict final Fallbacks (offline/api failure protection)
                     if (!this.eventForm.title_zh) this.eventForm.title_zh = this.eventForm.title_en;
                     if (!this.eventForm.title_en) this.eventForm.title_en = this.eventForm.title_zh;
                     if (!this.eventForm.location_zh) this.eventForm.location_zh = this.eventForm.location_en;
@@ -559,6 +606,7 @@
                     if (!this.eventForm.notes_zh) this.eventForm.notes_zh = this.eventForm.notes_en;
                     if (!this.eventForm.notes_en) this.eventForm.notes_en = this.eventForm.notes_zh;
 
+                    // Save or Update to events array
                     if (this.selectedEvent) {
                         // Edit item
                         this.events = this.events.map(evt => evt.id === this.selectedEvent.id ? { ...this.eventForm, id: this.selectedEvent.id } : evt);
