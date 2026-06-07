@@ -7,10 +7,10 @@
     <!-- Tailwind CSS for modern responsive styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Playful rounded Google Fonts -->
+    <!-- Playful rounded Google Fonts with Larger Base Weights -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@300..700&family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Quicksand:wght@600;700&display=swap" rel="stylesheet">
     
     <!-- FontAwesome for beautiful playful icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -18,10 +18,11 @@
     <style>
         body {
             font-family: 'Fredoka', 'Quicksand', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 16px; /* Increased base font size */
         }
         /* Custom scrollbar to keep layout cute */
         ::-webkit-scrollbar {
-            width: 8px;
+            width: 10px;
         }
         ::-webkit-scrollbar-track {
             background: #fef3c7;
@@ -128,17 +129,17 @@
 
         // UI categories definitions
         const CATEGORIES = {
-          sports: { icon: 'fa-solid fa-basketball-ball text-orange-500', color: 'bg-orange-100 text-orange-600 border-orange-200', dot: 'bg-orange-500' },
-          art: { icon: 'fa-solid fa-palette text-pink-500', color: 'bg-pink-100 text-pink-600 border-pink-200', dot: 'bg-pink-500' },
-          academic: { icon: 'fa-solid fa-book text-blue-500', color: 'bg-blue-100 text-blue-600 border-blue-200', dot: 'bg-blue-500' },
-          leisure: { icon: 'fa-solid fa-face-grin-tears text-green-500', color: 'bg-green-100 text-green-600 border-green-200', dot: 'bg-green-500' },
-          other: { icon: 'fa-solid fa-wand-magic-sparkles text-purple-500', color: 'bg-purple-100 text-purple-600 border-purple-200', dot: 'bg-purple-500' },
+          sports: { icon: 'fa-solid fa-basketball-ball text-orange-500 text-lg', color: 'bg-orange-100 text-orange-600 border-orange-200', dot: 'bg-orange-500' },
+          art: { icon: 'fa-solid fa-palette text-pink-500 text-lg', color: 'bg-pink-100 text-pink-600 border-pink-200', dot: 'bg-pink-500' },
+          academic: { icon: 'fa-solid fa-book text-blue-500 text-lg', color: 'bg-blue-100 text-blue-600 border-blue-200', dot: 'bg-blue-500' },
+          leisure: { icon: 'fa-solid fa-face-grin-tears text-green-500 text-lg', color: 'bg-green-100 text-green-600 border-green-200', dot: 'bg-green-500' },
+          other: { icon: 'fa-solid fa-wand-magic-sparkles text-purple-500 text-lg', color: 'bg-purple-100 text-purple-600 border-purple-200', dot: 'bg-purple-500' },
         };
 
         function plannerApp() {
             return {
                 lang: 'zh',
-                viewMode: 'month',
+                viewMode: 'day', // Changed default view mode to 'day' to see schedule immediately
                 currentDate: new Date(),
                 events: [],
                 completedInstances: [],
@@ -313,8 +314,8 @@
                     const isToday = this.formatDateString(new Date()) === dStr;
                     const isSelected = this.formatDateString(this.currentDate) === dStr;
                     
-                    if (isToday) return 'bg-yellow-100 border-yellow-400 font-extrabold text-yellow-800';
-                    if (isSelected) return 'bg-amber-200 border-amber-400 font-extrabold text-amber-950';
+                    if (isToday) return 'bg-yellow-100 border-yellow-400 font-extrabold text-yellow-800 ring-2 ring-yellow-400';
+                    if (isSelected) return 'bg-amber-200 border-amber-400 font-extrabold text-amber-950 ring-2 ring-amber-400';
                     return 'bg-white border-slate-100 hover:bg-slate-50 text-slate-700';
                 },
 
@@ -424,6 +425,65 @@
                     this.isModalOpen = true;
                 },
 
+                // Dynamic progress calculation based on active view mode
+                getProgress() {
+                    let activeEvents = [];
+                    let completedCount = 0;
+                    
+                    if (this.viewMode === 'day') {
+                        const dStr = this.formatDateString(this.currentDate);
+                        activeEvents = this.getEventsForDateString(dStr);
+                        completedCount = activeEvents.filter(evt => this.isEventCompleted(evt.id, dStr)).length;
+                    } else if (this.viewMode === 'week') {
+                        const weekDates = this.getWeekDates();
+                        weekDates.forEach(day => {
+                            const dStr = this.formatDateString(day);
+                            const dayEvts = this.getEventsForDateString(dStr);
+                            dayEvts.forEach(evt => {
+                                activeEvents.push({ id: evt.id, date: dStr });
+                            });
+                        });
+                        completedCount = activeEvents.filter(item => this.isEventCompleted(item.id, item.date)).length;
+                    } else if (this.viewMode === 'month') {
+                        const daysInMonth = this.getDaysInMonth(this.currentDate.getFullYear(), this.currentDate.getMonth());
+                        for (let i = 1; i <= daysInMonth; i++) {
+                            const dStr = this.getDateStrForDay(i);
+                            const dayEvts = this.getEventsForDateString(dStr);
+                            dayEvts.forEach(evt => {
+                                activeEvents.push({ id: evt.id, date: dStr });
+                            });
+                        }
+                        completedCount = activeEvents.filter(item => this.isEventCompleted(item.id, item.date)).length;
+                    }
+
+                    if (activeEvents.length === 0) return 0;
+                    return Math.round((completedCount / activeEvents.length) * 100);
+                },
+
+                // Progress feedback emoji
+                getProgressEmoji(percent) {
+                    if (percent === 0) return '😴';
+                    if (percent < 40) return '🌱';
+                    if (percent < 80) return '🚀';
+                    if (percent < 100) return '🌟';
+                    return '🏆🎉';
+                },
+
+                // Progress encouraging message
+                getProgressMessage(percent) {
+                    if (this.lang === 'zh') {
+                        if (percent === 0) return '準備開始今天的精彩活動！🎒';
+                        if (percent < 50) return '做得好，繼續加油！✨';
+                        if (percent < 100) return '快要完成了，加油加油！🔥';
+                        return '太厲害了！完成所有日程！🎉🌟';
+                    } else {
+                        if (percent === 0) return 'Ready to start the fun? 🎒';
+                        if (percent < 50) return 'Good start, keep going! ✨';
+                        if (percent < 100) return 'Almost there, keep it up! 🔥';
+                        return 'Incredible! All tasks done! 🎉🌟';
+                    }
+                },
+
                 // Upgraded Translation Engine using Google Translate Free API Client (CORS-friendly, extremely robust)
                 async autoTranslate(field) {
                     const currentFieldLang = this.lang === 'zh' ? 'zh' : 'en';
@@ -451,7 +511,7 @@
                             // Map over potential multi-sentence structures and merge them
                             const translatedText = data[0].map(sentence => sentence[0]).join('');
                             if (translatedText) {
-                                this.eventForm[`${field}_${targetFieldLang}`] = translatedText;
+                                this.eventForm[`${field}_target_lang`.replace('target_lang', targetFieldLang)] = translatedText;
                                 this.showToast(this.lang === 'zh' ? '翻譯完成！✨' : 'Translated successfully! ✨');
                             } else {
                                 throw new Error('Empty result');
@@ -524,6 +584,7 @@
                     let text = this.t[this.lang].whatsAppTemplate;
                     const kidDisplay = this.kidName ? `(${this.kidName})` : '';
                     text += `📅 *${dateStr} (${this.t[this.lang].weekDays[this.currentDate.getDay()]})* ${kidDisplay}\n`;
+                    text += `🏆 *今日完成度：${this.getProgress()}%*\n`;
                     text += `━━━━━━━━━━━━━━━━━━━\n`;
 
                     dayEvents.forEach((evt, idx) => {
@@ -805,93 +866,117 @@
          x-transition:leave="transition ease-in duration-200"
          x-transition:leave-start="opacity-100 transform translate-y-0"
          x-transition:leave-end="opacity-0 transform -translate-y-4"
-         class="fixed top-4 z-50 bg-amber-500 text-white font-bold py-3.5 px-6 rounded-full shadow-xl border-2 border-white flex items-center gap-2"
+         class="fixed top-4 z-50 bg-amber-500 text-white font-bold py-4 px-8 rounded-full shadow-2xl border-2 border-white flex items-center gap-3 text-lg"
          style="display: none;">
-        <i class="fa-solid fa-wand-magic-sparkles text-lg animate-pulse"></i>
+        <i class="fa-solid fa-wand-magic-sparkles text-xl animate-pulse"></i>
         <span x-text="toastMessage"></span>
     </div>
 
     <!-- Header Section with Crayon & Playful Vibe -->
-    <header class="w-full max-w-lg bg-yellow-300 border-b-4 border-yellow-400 p-5 rounded-b-[2rem] shadow-md text-center relative overflow-hidden">
+    <header class="w-full max-w-lg bg-yellow-300 border-b-4 border-yellow-400 p-6 rounded-b-[2.5rem] shadow-md text-center relative overflow-hidden">
         <div class="absolute -top-10 -left-10 w-24 h-24 bg-white opacity-20 rounded-full pointer-events-none"></div>
         <div class="absolute -bottom-10 -right-10 w-24 h-24 bg-white opacity-20 rounded-full pointer-events-none"></div>
         
-        <div class="flex justify-between items-center mb-3">
-            <!-- Bilingual Toggle -->
+        <div class="flex justify-between items-center mb-4">
+            <!-- Bilingual Toggle with Larger Buttons -->
             <button @click="toggleLanguage()"
-                    class="bg-white hover:bg-yellow-100 text-slate-700 font-bold py-1.5 px-4 rounded-full border-2 border-slate-700 flex items-center gap-2 text-sm shadow-sm transition active:scale-95">
-                <i class="fa-solid fa-globe text-amber-500"></i>
+                    class="bg-white hover:bg-yellow-100 text-slate-700 font-extrabold py-2 px-5 rounded-full border-2 border-slate-700 flex items-center gap-2 text-base shadow-md transition active:scale-95">
+                <i class="fa-solid fa-globe text-amber-500 text-lg"></i>
                 <span x-text="t[lang].langToggle"></span>
             </button>
 
-            <span class="text-2xl drop-shadow-md">🎒🏫🛹🎨</span>
+            <span class="text-3xl drop-shadow-md">🎒🏫🛹🎨</span>
         </div>
 
-        <!-- Dynamic Cuteness Title based on Kid's Name -->
-        <h1 class="text-3xl font-black text-slate-800 tracking-wider flex items-center justify-center gap-2 flex-wrap drop-shadow-sm">
+        <!-- Dynamic Cuteness Title based on Kid's Name - FONT SCALED UP -->
+        <h1 class="text-4xl font-black text-slate-800 tracking-wider flex items-center justify-center gap-2.5 flex-wrap drop-shadow-sm leading-tight">
             <i class="fa-solid fa-face-smile text-orange-500 animate-spin" style="animation-duration: 12s"></i>
             <span x-text="kidName ? (lang === 'zh' ? `${kidName}的Summer 日程助手` : `${kidName}'s Summer Planner`) : t[lang].title"></span>
         </h1>
         
-        <!-- Tailor-made Name Input (Crayon Box design) -->
-        <div class="mt-4 bg-yellow-100/90 border-2 border-dashed border-orange-300 rounded-2xl py-1.5 px-3 inline-flex items-center gap-2 max-w-full shadow-inner">
-            <span class="text-xs font-black text-orange-800 shrink-0">
-                <i class="fa-solid fa-pencil"></i> <span x-text="lang === 'zh' ? '小朋友名字：' : 'Kid\'s Name:'"></span>
+        <!-- Tailor-made Name Input - LARGER and easier to tap on mobile -->
+        <div class="mt-5 bg-yellow-100/90 border-2 border-dashed border-orange-300 rounded-3xl py-2 px-4 inline-flex items-center gap-3 max-w-full shadow-inner">
+            <span class="text-sm font-black text-orange-800 shrink-0">
+                <i class="fa-solid fa-pencil text-base"></i> <span x-text="lang === 'zh' ? '小朋友名字：' : 'Kid\'s Name:'"></span>
             </span>
             <input type="text"
                    x-model="kidName"
                    @input="saveKidName()"
                    :placeholder="lang === 'zh' ? '例如：哲哲' : 'e.g. Zhe Zhe'"
-                   class="bg-white border-2 border-amber-300 rounded-xl px-3 py-1 text-sm font-bold text-center text-slate-800 focus:outline-none focus:ring-4 focus:ring-amber-400 w-36 shadow-sm placeholder-slate-300" />
+                   class="bg-white border-2 border-amber-300 rounded-2xl px-4 py-2 text-base font-bold text-center text-slate-800 focus:outline-none focus:ring-4 focus:ring-amber-400 w-44 shadow-sm placeholder-slate-300" />
         </div>
 
-        <p class="text-slate-700 text-xs font-bold mt-2.5 tracking-wide" x-text="t[lang].subtitle"></p>
+        <p class="text-slate-700 text-sm font-extrabold mt-3.5 tracking-wide" x-text="t[lang].subtitle"></p>
     </header>
 
     <!-- Main Workspace -->
-    <main class="w-full max-w-lg px-4 mt-4 flex-1">
+    <main class="w-full max-w-lg px-4 mt-5 flex-1">
 
         <!-- Controls Block (Views toggle & Add Activity) -->
-        <div class="bg-white rounded-2xl border-4 border-amber-200 p-3.5 shadow-sm mb-4">
-            <div class="flex justify-between gap-2.5 mb-3">
-                <div class="grid grid-cols-3 gap-1 bg-amber-100 p-1.5 rounded-xl w-full">
-                    <template x-for="mode in ['month', 'week', 'day']">
+        <div class="bg-white rounded-[2rem] border-4 border-amber-200 p-4 shadow-sm mb-4">
+            
+            <!-- Rearranged View order to: Day, Week, Month with larger fonts -->
+            <div class="flex justify-between gap-3 mb-4">
+                <div class="grid grid-cols-3 gap-1.5 bg-amber-100 p-1.5 rounded-2xl w-full">
+                    <template x-for="mode in ['day', 'week', 'month']">
                         <button @click="viewMode = mode"
-                                :class="viewMode === mode ? 'bg-amber-400 text-slate-800 shadow-sm' : 'text-amber-800 hover:bg-amber-200'"
-                                class="py-2.5 px-2 rounded-lg font-black text-sm transition-all text-center"
+                                :class="viewMode === mode ? 'bg-amber-400 text-slate-900 shadow-md font-black ring-2 ring-amber-300' : 'text-amber-800 hover:bg-amber-200'"
+                                class="py-3 px-2 rounded-xl font-black text-base transition-all text-center"
                                 x-text="t[lang][mode]">
                         </button>
                     </template>
                 </div>
                 
                 <button @click="openAddModal()"
-                        class="bg-green-400 hover:bg-green-500 text-white font-extrabold py-2 px-4 rounded-xl border-b-4 border-green-600 flex items-center justify-center gap-1.5 shadow-md shrink-0 text-sm active:border-b-0 active:translate-y-1 transition-all">
-                    <i class="fa-solid fa-plus text-base"></i>
+                        class="bg-green-400 hover:bg-green-500 text-white font-extrabold py-3 px-5 rounded-2xl border-b-4 border-green-600 flex items-center justify-center gap-2 shadow-lg shrink-0 text-base active:border-b-0 active:translate-y-1 transition-all">
+                    <i class="fa-solid fa-plus text-lg"></i>
                     <span x-text="t[lang].addActivity"></span>
                 </button>
             </div>
 
             <!-- Calendar Back/Forward Controls -->
-            <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+            <div class="flex justify-between items-center bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 <button @click="handlePrev()"
-                        class="p-2.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 transition active:scale-90">
-                    <i class="fa-solid fa-chevron-left text-slate-700"></i>
+                        class="p-3.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 transition active:scale-95 shadow-sm">
+                    <i class="fa-solid fa-chevron-left text-slate-700 text-lg"></i>
                 </button>
                 
-                <span class="font-extrabold text-base md:text-lg text-slate-800 text-center px-1">
+                <span class="font-black text-lg md:text-xl text-slate-800 text-center px-1.5">
                     <span x-text="getCalendarTitle()"></span>
                 </span>
 
-                <div class="flex gap-1.5">
+                <div class="flex gap-2">
                     <button @click="handleToday()"
-                            class="py-1.5 px-3 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-950 font-black text-xs transition border border-amber-300">
+                            class="py-2 px-3.5 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 font-black text-sm transition border border-amber-300 shadow-sm">
                         Today
                     </button>
                     <button @click="handleNext()"
-                            class="p-2.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 transition active:scale-90">
-                        <i class="fa-solid fa-chevron-right text-slate-700"></i>
+                            class="p-3.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 transition active:scale-95 shadow-sm">
+                        <i class="fa-solid fa-chevron-right text-slate-700 text-lg"></i>
                     </button>
                 </div>
+            </div>
+            
+            <!-- 📊 Dynamic Completion Progress (%) Segment - BRAND NEW FEATURE -->
+            <div class="mt-4 p-4 bg-amber-50/70 border-2 border-dashed border-amber-300 rounded-2xl text-left">
+                <div class="flex justify-between items-center mb-1.5">
+                    <span class="font-black text-slate-700 text-base flex items-center gap-1.5">
+                        <i class="fa-solid fa-chart-line text-amber-500 text-lg"></i>
+                        <span x-text="viewMode === 'day' ? (lang === 'zh' ? '今日完成進度' : 'Today\'s Progress') : (viewMode === 'week' ? (lang === 'zh' ? '本週完成進度' : 'Weekly Progress') : (lang === 'zh' ? '本月完成進度' : 'Monthly Progress'))"></span>
+                    </span>
+                    <span class="font-black text-slate-800 text-lg bg-white px-2.5 py-0.5 rounded-full shadow-sm border border-amber-200">
+                        <span x-text="getProgress() + '%'"></span>
+                        <span x-text="getProgressEmoji(getProgress())" class="ml-1"></span>
+                    </span>
+                </div>
+                
+                <!-- Playful ProgressBar -->
+                <div class="w-full bg-slate-200 h-5 rounded-full overflow-hidden p-0.5 shadow-inner">
+                    <div class="bg-gradient-to-r from-yellow-400 to-green-400 h-full rounded-full transition-all duration-500"
+                         :style="'width: ' + getProgress() + '%'"></div>
+                </div>
+                
+                <p class="text-xs font-bold text-slate-500 mt-1.5 italic text-center" x-text="getProgressMessage(getProgress())"></p>
             </div>
         </div>
 
@@ -901,7 +986,7 @@
              style="display: none;">
             <div class="grid grid-cols-7 gap-1 text-center mb-2">
                 <template x-for="dayName in t[lang].weekDays">
-                    <div class="font-black text-xs text-slate-400 py-1" x-text="dayName"></div>
+                    <div class="font-black text-sm text-slate-400 py-1" x-text="dayName"></div>
                 </template>
             </div>
 
@@ -911,21 +996,21 @@
                     <div class="aspect-square bg-slate-50 rounded-xl opacity-35"></div>
                 </template>
 
-                <!-- Month days -->
+                <!-- Month days - Larger grids with bigger numbers -->
                 <template x-for="dayNum in getDaysArray()">
                     <button @click="selectAndGoToDay(dayNum)"
                             :class="getDayClass(dayNum)"
-                            class="aspect-square flex flex-col justify-between items-center p-1 rounded-xl border-2 transition relative">
-                        <span class="text-sm font-black" x-text="dayNum"></span>
+                            class="aspect-square flex flex-col justify-between items-center p-1.5 rounded-xl border-2 transition relative shadow-sm">
+                        <span class="text-base font-black" x-text="dayNum"></span>
                         
                         <!-- Mini Dot Indicators for events -->
-                        <div class="flex flex-wrap gap-0.5 justify-center mt-1 w-full max-h-5 overflow-hidden">
+                        <div class="flex flex-wrap gap-1 justify-center mt-1 w-full max-h-5 overflow-hidden">
                           <template x-for="evt in getEventsForDateString(getDateStrForDay(dayNum)).slice(0, 3)">
                             <span :class="isEventCompleted(evt.id, getDateStrForDay(dayNum)) ? 'bg-slate-300' : getCategoryConfig(evt.category).dot"
-                                  class="w-1.5 h-1.5 rounded-full"></span>
+                                  class="w-2 h-2 rounded-full"></span>
                           </template>
                           <span x-show="getEventsForDateString(getDateStrForDay(dayNum)).length > 3" 
-                                class="text-[8px] leading-none font-black text-slate-400">+</span>
+                                class="text-[9px] leading-none font-black text-slate-400">+</span>
                         </div>
                     </button>
                 </template>
@@ -934,53 +1019,53 @@
 
         <!-- --------------------- WEEK VIEW --------------------- -->
         <div x-show="viewMode === 'week'" 
-             class="bg-white rounded-[2rem] border-4 border-amber-200 p-4 shadow-md space-y-3"
+             class="bg-white rounded-[2rem] border-4 border-amber-200 p-4 shadow-md space-y-4"
              style="display: none;">
             
             <template x-for="day in getWeekDates()">
                 <div :class="isToday(day) ? 'bg-yellow-50 border-yellow-300' : 'bg-slate-50 border-slate-100'"
-                     class="p-3.5 rounded-2xl border-2">
+                     class="p-4 rounded-2xl border-2 shadow-sm">
                     
-                    <div class="flex justify-between items-center mb-2">
+                    <div class="flex justify-between items-center mb-3">
                         <button @click="currentDate = day; viewMode = 'day'"
-                                class="font-black text-sm text-amber-900 bg-amber-100 px-3.5 py-1.5 rounded-full flex items-center gap-1.5 hover:bg-amber-200 transition">
+                                class="font-black text-base text-amber-900 bg-amber-100 px-4 py-2 rounded-full flex items-center gap-1.5 hover:bg-amber-200 transition shadow-sm">
                             <span x-text="formatDateShort(day) + ' (' + t[lang].weekDays[day.getDay()] + ')'"></span>
                         </button>
-                        <span class="text-xs font-bold text-slate-400">
+                        <span class="text-sm font-black text-slate-400">
                             <span x-text="getEventsForDateString(formatDateString(day)).length"></span> 
                             <span x-text="lang === 'zh' ? '個活動' : 'activities'"></span>
                         </span>
                     </div>
 
-                    <!-- Weekday Agenda List -->
-                    <div class="space-y-1.5">
+                    <!-- Weekday Agenda List - Highly legible text sizes -->
+                    <div class="space-y-2">
                         <template x-for="evt in getEventsForDateString(formatDateString(day))">
-                            <div :class="isEventCompleted(evt.id, formatDateString(day)) ? 'bg-slate-100 opacity-60 border-slate-200' : 'bg-white border-slate-200 shadow-sm'"
-                                 class="flex justify-between items-center p-2.5 rounded-xl border text-sm transition-all">
+                            <div :class="isEventCompleted(evt.id, formatDateString(day)) ? 'bg-slate-100 opacity-60 border-slate-200' : 'bg-white border-slate-200 shadow-md'"
+                                 class="flex justify-between items-center p-3.5 rounded-xl border text-base transition-all">
                                 
-                                <div class="flex items-center gap-2 min-w-0">
+                                <div class="flex items-center gap-3 min-w-0">
                                     <span @click="toggleEventComplete(evt.id, formatDateString(day))"
                                           :class="isEventCompleted(evt.id, formatDateString(day)) ? 'bg-green-400 border-green-500 text-white' : 'border-slate-300 hover:border-slate-400 bg-white'"
-                                          class="w-6 h-6 rounded-full border-2 flex items-center justify-center cursor-pointer shrink-0">
-                                        <i x-show="isEventCompleted(evt.id, formatDateString(day))" class="fa-solid fa-check text-xs"></i>
+                                          class="w-7 h-7 rounded-full border-2 flex items-center justify-center cursor-pointer shrink-0 shadow-sm">
+                                        <i x-show="isEventCompleted(evt.id, formatDateString(day))" class="fa-solid fa-check text-sm"></i>
                                     </span>
 
-                                    <div :class="isEventCompleted(evt.id, formatDateString(day)) ? 'line-through text-slate-400' : 'font-extrabold text-slate-700'"
-                                         class="truncate">
-                                        <i :class="getCategoryConfig(evt.category).icon" class="text-xs mr-1 text-slate-400"></i>
+                                    <div :class="isEventCompleted(evt.id, formatDateString(day)) ? 'line-through text-slate-400 font-bold' : 'font-black text-slate-700'"
+                                         class="truncate text-base md:text-lg">
+                                        <i :class="getCategoryConfig(evt.category).icon" class="mr-1 text-slate-400"></i>
                                         <span x-text="evt.startTime + ' ' + getEventText(evt, 'title')"></span>
                                     </div>
                                 </div>
 
                                 <button @click="openEditModal(evt)"
-                                        class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 shrink-0">
-                                    <i class="fa-solid fa-pen text-xs"></i>
+                                        class="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 shrink-0">
+                                    <i class="fa-solid fa-pen text-base"></i>
                                 </button>
                             </div>
                         </template>
                         
                         <div x-show="getEventsForDateString(formatDateString(day)).length === 0" 
-                             class="text-xs text-slate-400 italic py-1 pl-2"
+                             class="text-sm text-slate-400 italic py-1 pl-2 font-bold"
                              x-text="t[lang].noEvents">
                         </div>
                     </div>
@@ -994,73 +1079,73 @@
              style="display: none;">
             
             <!-- Quick Action Caregiver Tools -->
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-2 gap-3.5">
                 <button @click="shareToWhatsApp()"
-                        class="bg-[#25D366] hover:bg-[#20ba59] text-white font-extrabold py-3.5 px-4 rounded-2xl border-b-4 border-emerald-700 flex items-center justify-center gap-2 shadow-md active:border-b-0 active:translate-y-1 transition-all text-base">
-                    <i class="fa-brands fa-whatsapp text-xl"></i>
+                        class="bg-[#25D366] hover:bg-[#20ba59] text-white font-black py-4 px-5 rounded-2.5xl border-b-4 border-emerald-700 flex items-center justify-center gap-2.5 shadow-lg active:border-b-0 active:translate-y-1 transition-all text-lg">
+                    <i class="fa-brands fa-whatsapp text-2xl"></i>
                     <span x-text="t[lang].shareWhatsApp"></span>
                 </button>
 
                 <button @click="openAddModal(formatDateString(currentDate))"
-                        class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold py-3.5 px-4 rounded-2xl border-b-4 border-amber-600 flex items-center justify-center gap-2 shadow-md active:border-b-0 active:translate-y-1 transition-all text-base">
-                    <i class="fa-solid fa-plus text-lg"></i>
+                        class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-4 px-5 rounded-2.5xl border-b-4 border-amber-600 flex items-center justify-center gap-2.5 shadow-lg active:border-b-0 active:translate-y-1 transition-all text-lg">
+                    <i class="fa-solid fa-plus text-xl"></i>
                     <span x-text="t[lang].addActivity"></span>
                 </button>
             </div>
 
-            <!-- Detailed list for this single day -->
+            <!-- Detailed list for this single day - Enlarged fonts for supreme mobile legibility -->
             <div class="bg-white rounded-[2rem] border-4 border-amber-200 p-5 shadow-md">
-                <h3 class="font-extrabold text-lg text-slate-800 border-b-2 border-dashed border-amber-100 pb-2 mb-4 flex items-center gap-2">
-                    <span>🎒</span>
+                <h3 class="font-black text-xl text-slate-800 border-b-2 border-dashed border-amber-100 pb-3 mb-4 flex items-center gap-2">
+                    <span class="text-2xl">🎒</span>
                     <span x-text="isToday(currentDate) ? (lang === 'zh' ? '今天的精彩活動' : 'Today\'s Schedule') : (lang === 'zh' ? '當日行程安排' : 'Schedule for this day')"></span>
                 </h3>
 
                 <div class="space-y-4">
                     <template x-for="evt in getEventsForDateString(formatDateString(currentDate))">
-                        <div :class="isEventCompleted(evt.id, formatDateString(currentDate)) ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-amber-100 shadow-sm hover:border-amber-300'"
-                             class="p-4 rounded-2xl border-2 flex gap-4 transition-all relative">
+                        <div :class="isEventCompleted(evt.id, formatDateString(currentDate)) ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-amber-100 shadow-md hover:border-amber-300'"
+                             class="p-5 rounded-2.5xl border-2 flex gap-4 transition-all relative">
                             
                             <!-- Large Circle Complete Checkbox -->
-                            <div class="flex flex-col justify-start pt-1">
+                            <div class="flex flex-col justify-start pt-1.5">
                                 <button @click="toggleEventComplete(evt.id, formatDateString(currentDate))"
                                         :class="isEventCompleted(evt.id, formatDateString(currentDate)) ? 'bg-green-400 border-green-500 text-white' : 'border-slate-300 hover:border-slate-400 bg-white'"
-                                        class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition active:scale-95">
-                                    <i x-show="isEventCompleted(evt.id, formatDateString(currentDate))" class="fa-solid fa-check text-base"></i>
+                                        class="w-10 h-10 rounded-full border-2 flex items-center justify-center transition active:scale-90 shadow-md">
+                                    <i x-show="isEventCompleted(evt.id, formatDateString(currentDate))" class="fa-solid fa-check text-xl"></i>
                                 </button>
                             </div>
 
-                            <!-- Activity info details -->
-                            <div class="flex-1 space-y-2 min-w-0">
+                            <!-- Activity info details with ENLARGED typography -->
+                            <div class="flex-1 space-y-2.5 min-w-0">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <span :class="getCategoryConfig(evt.category).color"
-                                          class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border">
-                                        <i :class="getCategoryConfig(evt.category).icon" class="text-xs"></i>
+                                          class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border uppercase">
+                                        <i :class="getCategoryConfig(evt.category).icon"></i>
                                         <span x-text="t[lang][evt.category]"></span>
                                     </span>
                                     
                                     <span x-show="evt.recurrence === 'weekly'" 
-                                          class="bg-slate-100 border border-slate-200 text-slate-500 rounded-full px-2.5 py-1 text-[10px] font-black flex items-center gap-1">
-                                        <i class="fa-solid fa-arrows-spin animate-spin text-[9px]" style="animation-duration: 5s"></i>
+                                          class="bg-slate-100 border border-slate-200 text-slate-500 rounded-full px-2.5 py-1 text-[11px] font-black flex items-center gap-1">
+                                        <i class="fa-solid fa-arrows-spin animate-spin text-[10px]" style="animation-duration: 5s"></i>
                                         <span x-text="t[lang].weeklyRepeat"></span>
                                     </span>
                                 </div>
 
-                                <h4 :class="isEventCompleted(evt.id, formatDateString(currentDate)) ? 'line-through text-slate-400' : 'font-black text-slate-800'"
-                                    class="text-lg break-words leading-snug"
+                                <h4 :class="isEventCompleted(evt.id, formatDateString(currentDate)) ? 'line-through text-slate-400 font-bold' : 'font-black text-slate-800'"
+                                    class="text-xl md:text-2xl break-words leading-tight"
                                     x-text="getEventText(evt, 'title')">
                                 </h4>
 
-                                <div class="text-slate-500 text-sm font-bold space-y-1.5">
-                                    <p class="flex items-center gap-2">
-                                        <i class="fa-regular fa-clock text-amber-500 shrink-0"></i>
+                                <div class="text-slate-500 text-base font-bold space-y-2">
+                                    <p class="flex items-center gap-2.5 text-slate-600">
+                                        <i class="fa-regular fa-clock text-amber-500 text-lg shrink-0"></i>
                                         <span x-text="evt.startTime + ' - ' + evt.endTime"></span>
                                     </p>
-                                    <p x-show="getEventText(evt, 'location')" class="flex items-center gap-2">
-                                        <i class="fa-solid fa-location-dot text-rose-500 shrink-0"></i>
-                                        <span class="truncate" x-text="getEventText(evt, 'location')"></span>
+                                    <p x-show="getEventText(evt, 'location')" class="flex items-center gap-2.5 text-slate-600">
+                                        <i class="fa-solid fa-location-dot text-rose-500 text-lg shrink-0"></i>
+                                        <span class="truncate font-black" x-text="getEventText(evt, 'location')"></span>
                                     </p>
-                                    <p x-show="getEventText(evt, 'notes')" class="flex items-start gap-2 mt-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs text-slate-600">
-                                        <i class="fa-regular fa-file-lines text-slate-400 shrink-0 mt-0.5"></i>
+                                    <p x-show="getEventText(evt, 'notes')" class="flex items-start gap-2.5 mt-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-100 text-sm text-slate-600 font-bold leading-relaxed">
+                                        <i class="fa-regular fa-file-lines text-slate-400 text-lg shrink-0 mt-0.5"></i>
                                         <span class="whitespace-pre-wrap" x-text="getEventText(evt, 'notes')"></span>
                                     </p>
                                 </div>
@@ -1069,8 +1154,8 @@
                             <!-- Edit Trigger -->
                             <div class="flex flex-col justify-between items-end shrink-0">
                                 <button @click="openEditModal(evt)"
-                                        class="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
-                                    <i class="fa-solid fa-pen-to-square text-lg"></i>
+                                        class="p-2.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
+                                    <i class="fa-solid fa-pen-to-square text-2xl"></i>
                                 </button>
                             </div>
                         </div>
@@ -1078,44 +1163,44 @@
 
                     <!-- Empty single day display -->
                     <div x-show="getEventsForDateString(formatDateString(currentDate)).length === 0" 
-                         class="text-center py-12 px-4">
-                        <div class="text-5xl mb-4">🎨🛶🍕</div>
-                        <p class="text-slate-500 font-extrabold text-sm" x-text="t[lang].noEvents"></p>
+                         class="text-center py-16 px-4">
+                        <div class="text-6xl mb-4">🎨🛶🍕</div>
+                        <p class="text-slate-500 font-black text-lg" x-text="t[lang].noEvents"></p>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Footer Management Utilities -->
-        <div class="mt-6 bg-white border-4 border-amber-200 rounded-[2rem] p-4 shadow-sm text-center">
-            <p class="text-xs font-black text-amber-900 mb-3 tracking-wider flex items-center justify-center gap-1.5">
-                <i class="fa-solid fa-wand-magic-sparkles text-amber-500 animate-pulse"></i>
+        <div class="mt-6 bg-white border-4 border-amber-200 rounded-[2.5rem] p-5 shadow-sm text-center">
+            <p class="text-sm font-black text-amber-900 mb-4.5 tracking-wider flex items-center justify-center gap-2">
+                <i class="fa-solid fa-wand-magic-sparkles text-amber-500 animate-pulse text-base"></i>
                 <span x-text="lang === 'zh' ? '日曆數據備份與匯出' : 'Backup & Google Calendar'"></span>
             </p>
             
-            <div class="grid grid-cols-2 gap-2.5">
+            <div class="grid grid-cols-2 gap-3">
                 <button @click="exportToICS()"
-                        class="bg-amber-100 hover:bg-amber-200 text-amber-950 font-bold py-3 px-3 rounded-xl border border-amber-300 text-xs flex items-center justify-center gap-2 transition active:scale-95">
-                    <i class="fa-solid fa-calendar-arrow-down"></i>
+                        class="bg-amber-100 hover:bg-amber-200 text-amber-950 font-black py-3.5 px-3 rounded-2xl border-2 border-amber-300 text-sm flex items-center justify-center gap-2 transition active:scale-95 shadow-sm">
+                    <i class="fa-solid fa-calendar-arrow-down text-base"></i>
                     <span x-text="t[lang].exportCalendar"></span>
                 </button>
 
                 <button @click="handleJSONExport()"
-                        class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-3 rounded-xl border border-slate-300 text-xs flex items-center justify-center gap-2 transition active:scale-95">
-                    <i class="fa-solid fa-file-shield"></i>
+                        class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-3.5 px-3 rounded-2xl border-2 border-slate-300 text-sm flex items-center justify-center gap-2 transition active:scale-95 shadow-sm">
+                    <i class="fa-solid fa-file-shield text-base"></i>
                     <span x-text="t[lang].exportData"></span>
                 </button>
             </div>
 
-            <div class="mt-3.5 pt-3.5 border-t border-dashed border-slate-200">
-                <label class="inline-flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold py-2.5 px-4 rounded-xl border border-slate-300 text-xs cursor-pointer transition w-full">
-                    <i class="fa-solid fa-file-import"></i>
+            <div class="mt-4 pt-4 border-t border-dashed border-slate-200">
+                <label class="inline-flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-600 font-black py-3.5 px-4 rounded-2xl border-2 border-slate-300 text-sm cursor-pointer transition w-full shadow-sm">
+                    <i class="fa-solid fa-file-import text-base"></i>
                     <span x-text="t[lang].importData"></span>
                     <input type="file" accept=".json, .ics" @change="handleFileImport($event)" class="hidden" />
                 </label>
             </div>
             
-            <div class="mt-4 text-[11px] text-slate-400 font-bold leading-relaxed bg-amber-50 p-3 rounded-xl text-left border border-amber-100">
+            <div class="mt-4 text-xs text-slate-400 font-black leading-relaxed bg-amber-50 p-4 rounded-2xl text-left border border-amber-100">
                 💡 <strong x-text="lang === 'zh' ? 'Google Calendar / ICS 說明：' : 'Helper\'s Guide:'"></strong> <br />
                 <span x-text="lang === 'zh' ? '1. 【匯出】：按「匯出日曆 (ICS)」下載檔案，可匯入 Google Calendar 設定網頁。' : '1. [Export]: Press \'Export Calendar (ICS)\' to download, then import via Google Calendar web settings.'"></span><br />
                 <span x-text="lang === 'zh' ? '2. 【匯入】：直接點擊「匯入資料 (JSON/ICS)」按鈕，選取你從 Google Calendar 匯出的 .ics 檔案，行程將瞬間同步到此網頁！' : '2. [Import]: Directly tap \'Import Data (JSON/ICS)\' and select a .ics file exported from Google Calendar to instantly sync activities!'"></span>
@@ -1130,31 +1215,31 @@
          style="display: none;">
         
         <div @click.away="isModalOpen = false" 
-             class="bg-white rounded-[2rem] border-4 border-amber-300 max-w-md w-full p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+             class="bg-white rounded-[2.5rem] border-4 border-amber-300 max-w-md w-full p-6 shadow-2xl overflow-y-auto max-h-[92vh]">
             
             <div class="flex justify-between items-center border-b-2 border-dashed border-amber-100 pb-3 mb-4">
-                <h3 class="text-xl font-black text-slate-800 flex items-center gap-2">
+                <h3 class="text-2xl font-black text-slate-800 flex items-center gap-2">
                     <span>🎪</span>
                     <span x-text="selectedEvent ? t[lang].editActivity : t[lang].addActivity"></span>
                 </h3>
-                <button @click="isModalOpen = false" class="p-1 rounded-full hover:bg-slate-100 text-slate-400">
-                    <i class="fa-solid fa-xmark text-xl"></i>
+                <button @click="isModalOpen = false" class="p-2 rounded-full hover:bg-slate-100 text-slate-400">
+                    <i class="fa-solid fa-xmark text-2xl"></i>
                 </button>
             </div>
 
-            <!-- Input Form inside modal -->
+            <!-- Input Form inside modal with scaled up fields -->
             <form @submit.prevent="handleSubmitEvent()" class="space-y-4">
               
               <!-- Quick Category visual selectors -->
               <div>
-                <label class="block text-xs font-black text-slate-400 mb-1.5 uppercase tracking-wide" x-text="t[lang].category"></label>
+                <label class="block text-sm font-black text-slate-400 mb-1.5 uppercase tracking-wide" x-text="t[lang].category"></label>
                 <div class="grid grid-cols-3 gap-1.5">
                   <template x-for="cat in Object.keys(CATEGORIES)">
                     <button type="button"
                             @click="eventForm.category = cat"
-                            :class="eventForm.category === cat ? getCategoryConfig(cat).color + ' border-2 ring-2 ring-amber-300' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'"
-                            class="py-2 px-2 rounded-xl border text-[11px] font-black flex flex-col items-center gap-1.5 transition">
-                        <i :class="getCategoryConfig(cat).icon" class="text-sm"></i>
+                            :class="eventForm.category === cat ? getCategoryConfig(cat).color + ' border-2 ring-2 ring-amber-300 shadow-inner' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'"
+                            class="py-2.5 px-2 rounded-xl border-2 text-xs font-black flex flex-col items-center gap-1.5 transition">
+                        <i :class="getCategoryConfig(cat).icon"></i>
                         <span x-text="t[lang][cat]"></span>
                     </button>
                   </template>
@@ -1162,48 +1247,48 @@
               </div>
 
               <!-- Activity Title (Bilingual Field) -->
-              <div class="bg-amber-50/50 p-3 rounded-2xl border-2 border-dashed border-amber-200 space-y-3">
+              <div class="bg-amber-50/50 p-4 rounded-2xl border-2 border-dashed border-amber-200 space-y-3.5">
                 <div class="flex justify-between items-center">
-                    <span class="text-xs font-black text-amber-800">✨ 填寫活動名稱 (Bilingual Fields)</span>
+                    <span class="text-sm font-black text-amber-800">✨ 填寫活動名稱 (Bilingual Fields)</span>
                     <button type="button" @click="autoTranslate('title')"
-                            class="text-[10px] bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold px-2 py-1 rounded-lg flex items-center gap-1 transition">
+                            class="text-xs bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold px-3 py-1.5 rounded-xl flex items-center gap-1 transition shadow-sm">
                         <i class="fa-solid fa-wand-magic-sparkles animate-spin" x-show="translatingField === 'title'"></i>
                         <i class="fa-solid fa-wand-magic-sparkles" x-show="translatingField !== 'title'"></i>
                         <span x-text="lang === 'zh' ? '一鍵翻譯 ⇄ Auto-Translate' : 'Translate ⇄ 一鍵翻譯'"></span>
                     </button>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-0.5">繁體中文 (ZH) *</label>
+                    <label class="block text-sm font-black text-slate-500 mb-1">繁體中文 (ZH) *</label>
                     <input type="text"
                            placeholder="例如：鋼琴班"
                            x-model="eventForm.title_zh"
-                           class="w-full p-2 rounded-lg border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+                           class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-base" />
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-500 mb-0.5">English (EN) *</label>
+                    <label class="block text-sm font-black text-slate-500 mb-1">English (EN) *</label>
                     <input type="text"
                            placeholder="e.g. Piano Lesson"
                            x-model="eventForm.title_en"
-                           class="w-full p-2 rounded-lg border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+                           class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-base" />
                 </div>
               </div>
 
               <!-- Date Selection & Recurrence -->
               <div class="grid grid-cols-2 gap-3">
                 <div>
-                  <label class="block text-sm font-black text-slate-700 mb-1">
+                  <label class="block text-base font-black text-slate-700 mb-1">
                       <span x-text="t[lang].date"></span> *
                   </label>
                   <input type="date"
                          required
                          x-model="eventForm.date"
-                         class="w-full p-2.5 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+                         class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
                 </div>
 
                 <div>
-                  <label class="block text-sm font-black text-slate-700 mb-1" x-text="t[lang].recurrence"></label>
+                  <label class="block text-base font-black text-slate-700 mb-1" x-text="t[lang].recurrence"></label>
                   <select x-model="eventForm.recurrence"
-                          class="w-full p-2.5 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm bg-white">
+                          class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm bg-white">
                     <option value="none" x-text="t[lang].noRepeat"></option>
                     <option value="weekly" x-text="t[lang].weeklyRepeat"></option>
                   </select>
@@ -1212,88 +1297,88 @@
 
               <!-- Recurrence Limit -->
               <div x-show="eventForm.recurrence === 'weekly'">
-                <label class="block text-sm font-black text-slate-700 mb-1" x-text="t[lang].repeatUntil"></label>
+                <label class="block text-base font-black text-slate-700 mb-1" x-text="t[lang].repeatUntil"></label>
                 <input type="date"
                        x-model="eventForm.repeatUntil"
-                       class="w-full p-2.5 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+                       class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
               </div>
 
               <!-- Start and End Times -->
               <div class="grid grid-cols-2 gap-3">
                 <div>
-                  <label class="block text-sm font-black text-slate-700 mb-1">
+                  <label class="block text-base font-black text-slate-700 mb-1">
                       開始時間 / Start
                   </label>
                   <input type="time"
                          x-model="eventForm.startTime"
-                         class="w-full p-2.5 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+                         class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
                 </div>
 
                 <div>
-                  <label class="block text-sm font-black text-slate-700 mb-1">
+                  <label class="block text-base font-black text-slate-700 mb-1">
                       結束時間 / End
                   </label>
                   <input type="time"
                          x-model="eventForm.endTime"
-                         class="w-full p-2.5 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
+                         class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
                 </div>
               </div>
 
               <!-- Location Details (Bilingual Field) -->
-              <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+              <div class="bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 space-y-2.5">
                 <div class="flex justify-between items-center">
-                    <span class="text-xs font-black text-slate-600">📍 填寫上課地點 (Location)</span>
+                    <span class="text-sm font-black text-slate-600">📍 填寫上課地點 (Location)</span>
                     <button type="button" @click="autoTranslate('location')"
-                            class="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-2 py-1 rounded flex items-center gap-1 transition">
-                        <i class="fa-solid fa-language animate-pulse" x-show="translatingField === 'location'"></i>
+                            class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition shadow-sm">
                         <i class="fa-solid fa-language" x-show="translatingField !== 'location'"></i>
+                        <i class="fa-solid fa-spinner animate-spin" x-show="translatingField === 'location'"></i>
                         <span>Translate ⇄ 翻譯</span>
                     </button>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
                     <input type="text" placeholder="繁中: 柴灣體育館" x-model="eventForm.location_zh"
-                           class="p-2 rounded-lg border border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-xs" />
+                           class="p-2.5 rounded-lg border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
                     <input type="text" placeholder="English: Sports Center" x-model="eventForm.location_en"
-                           class="p-2 rounded-lg border border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-xs" />
+                           class="p-2.5 rounded-lg border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm" />
                 </div>
               </div>
 
               <!-- Notes Info (Bilingual Field) -->
-              <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+              <div class="bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 space-y-2.5">
                 <div class="flex justify-between items-center">
-                    <span class="text-xs font-black text-slate-600">📝 填寫備註 (Notes / Remarks)</span>
+                    <span class="text-sm font-black text-slate-600">📝 填寫備註 (Notes / Remarks)</span>
                     <button type="button" @click="autoTranslate('notes')"
-                            class="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-2 py-1 rounded flex items-center gap-1 transition">
-                        <i class="fa-solid fa-language animate-pulse" x-show="translatingField === 'notes'"></i>
+                            class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 transition shadow-sm">
                         <i class="fa-solid fa-language" x-show="translatingField !== 'notes'"></i>
+                        <i class="fa-solid fa-spinner animate-spin" x-show="translatingField === 'notes'"></i>
                         <span>Translate ⇄ 翻譯</span>
                     </button>
                 </div>
-                <div class="space-y-1.5">
+                <div class="space-y-2">
                     <textarea rows="1" placeholder="繁中: 帶泳帽與毛巾" x-model="eventForm.notes_zh"
-                              class="w-full p-2 rounded-lg border border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-xs"></textarea>
+                              class="w-full p-2.5 rounded-lg border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm"></textarea>
                     <textarea rows="1" placeholder="English: Bring cap & towel" x-model="eventForm.notes_en"
-                              class="w-full p-2 rounded-lg border border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-xs"></textarea>
+                              class="w-full p-2.5 rounded-lg border-2 border-slate-200 focus:border-amber-400 focus:outline-none font-bold text-slate-700 text-sm"></textarea>
                 </div>
               </div>
 
               <!-- Modal Submit Options -->
-              <div class="flex gap-2.5 pt-3">
+              <div class="flex gap-3 pt-3">
                 <button type="button"
                         x-show="selectedEvent"
                         @click="handleDeleteEvent(selectedEvent.id)"
-                        class="bg-red-100 hover:bg-red-200 text-red-600 font-extrabold p-3.5 rounded-xl border border-red-200 flex items-center justify-center shadow-sm transition active:scale-90">
-                    <i class="fa-solid fa-trash-can text-lg"></i>
+                        class="bg-red-100 hover:bg-red-200 text-red-600 font-extrabold p-4 rounded-2xl border border-red-200 flex items-center justify-center shadow-md transition active:scale-90">
+                    <i class="fa-solid fa-trash-can text-xl"></i>
                 </button>
                 
                 <button type="button"
                         @click="isModalOpen = false"
-                        class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold py-3 rounded-xl text-center shadow-sm text-sm"
+                        class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-extrabold py-4 rounded-2xl text-center shadow-md text-base"
                         x-text="t[lang].cancel">
                 </button>
 
                 <button type="submit"
-                        class="flex-1 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold py-3 rounded-xl text-center border-b-4 border-amber-600 active:border-b-0 active:translate-y-1 transition-all shadow-md text-sm"
+                        class="flex-1 bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-4 rounded-2xl text-center border-b-4 border-amber-600 active:border-b-0 active:translate-y-1 transition-all shadow-lg text-base"
                         x-text="t[lang].save">
                 </button>
               </div>
