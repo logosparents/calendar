@@ -424,31 +424,44 @@
                     this.isModalOpen = true;
                 },
 
-                // Free Public Translation API Integration (MyMemory)
+                // Upgraded Translation Engine using Google Translate Free API Client (CORS-friendly, extremely robust)
                 async autoTranslate(field) {
-                    const sourceLang = this.lang === 'zh' ? 'zh' : 'en';
-                    const targetLang = sourceLang === 'zh' ? 'en' : 'zh';
+                    const currentFieldLang = this.lang === 'zh' ? 'zh' : 'en';
+                    const targetFieldLang = this.lang === 'zh' ? 'en' : 'zh';
                     
-                    const sourceText = this.eventForm[`${field}_${sourceLang}`]?.trim();
+                    const sourceText = this.eventForm[`${field}_${currentFieldLang}`]?.trim();
                     if (!sourceText) {
                         this.showToast(this.lang === 'zh' ? '請先填寫當前語言欄位！' : 'Please fill in current language field first!');
                         return;
                     }
 
                     this.translatingField = field;
-                    const langPair = sourceLang === 'zh' ? 'zh-HK|en-GB' : 'en-GB|zh-HK';
+                    
+                    // Maps standard languages for Google Translate client API
+                    const sl = this.lang === 'zh' ? 'zh-TW' : 'en';
+                    const tl = this.lang === 'zh' ? 'en' : 'zh-TW';
                     
                     try {
-                        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(sourceText)}&langpair=${langPair}`);
+                        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(sourceText)}`;
+                        const res = await fetch(url);
+                        if (!res.ok) throw new Error('API request failed');
+                        
                         const data = await res.json();
-                        if (data && data.responseData && data.responseData.translatedText) {
-                            this.eventForm[`${field}_${targetLang}`] = data.responseData.translatedText;
-                            this.showToast(this.lang === 'zh' ? '翻譯完成！✨' : 'Translated successfully! ✨');
+                        if (data && data[0]) {
+                            // Map over potential multi-sentence structures and merge them
+                            const translatedText = data[0].map(sentence => sentence[0]).join('');
+                            if (translatedText) {
+                                this.eventForm[`${field}_${targetFieldLang}`] = translatedText;
+                                this.showToast(this.lang === 'zh' ? '翻譯完成！✨' : 'Translated successfully! ✨');
+                            } else {
+                                throw new Error('Empty result');
+                            }
                         } else {
-                            throw new Error();
+                            throw new Error('Invalid structure');
                         }
                     } catch (err) {
-                        this.showToast(this.lang === 'zh' ? '翻譯忙碌中，請手動填寫！' : 'Translation busy, please fill manually!');
+                        console.error("Translation Error: ", err);
+                        this.showToast(this.lang === 'zh' ? '翻譯系統忙碌，請手動填寫！' : 'Translation failed, please type manually!');
                     } finally {
                         this.translatingField = '';
                     }
@@ -1154,7 +1167,8 @@
                     <span class="text-xs font-black text-amber-800">✨ 填寫活動名稱 (Bilingual Fields)</span>
                     <button type="button" @click="autoTranslate('title')"
                             class="text-[10px] bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold px-2 py-1 rounded-lg flex items-center gap-1 transition">
-                        <i class="fa-solid fa-wand-magic-sparkles" :class="translatingField === 'title' ? 'animate-spin' : ''"></i>
+                        <i class="fa-solid fa-wand-magic-sparkles animate-spin" x-show="translatingField === 'title'"></i>
+                        <i class="fa-solid fa-wand-magic-sparkles" x-show="translatingField !== 'title'"></i>
                         <span x-text="lang === 'zh' ? '一鍵翻譯 ⇄ Auto-Translate' : 'Translate ⇄ 一鍵翻譯'"></span>
                     </button>
                 </div>
@@ -1230,8 +1244,9 @@
                 <div class="flex justify-between items-center">
                     <span class="text-xs font-black text-slate-600">📍 填寫上課地點 (Location)</span>
                     <button type="button" @click="autoTranslate('location')"
-                            class="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-2 py-0.5 rounded flex items-center gap-1 transition">
-                        <i class="fa-solid fa-language" :class="translatingField === 'location' ? 'animate-pulse' : ''"></i>
+                            class="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-2 py-1 rounded flex items-center gap-1 transition">
+                        <i class="fa-solid fa-language animate-pulse" x-show="translatingField === 'location'"></i>
+                        <i class="fa-solid fa-language" x-show="translatingField !== 'location'"></i>
                         <span>Translate ⇄ 翻譯</span>
                     </button>
                 </div>
@@ -1248,8 +1263,9 @@
                 <div class="flex justify-between items-center">
                     <span class="text-xs font-black text-slate-600">📝 填寫備註 (Notes / Remarks)</span>
                     <button type="button" @click="autoTranslate('notes')"
-                            class="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-2 py-0.5 rounded flex items-center gap-1 transition">
-                        <i class="fa-solid fa-language" :class="translatingField === 'notes' ? 'animate-pulse' : ''"></i>
+                            class="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-2 py-1 rounded flex items-center gap-1 transition">
+                        <i class="fa-solid fa-language animate-pulse" x-show="translatingField === 'notes'"></i>
+                        <i class="fa-solid fa-language" x-show="translatingField !== 'notes'"></i>
                         <span>Translate ⇄ 翻譯</span>
                     </button>
                 </div>
