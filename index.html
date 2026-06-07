@@ -81,7 +81,10 @@
             langToggle: "English / 繁中",
             required: "必填欄位",
             addSuccess: "活動新增成功！🎒",
-            deleteSuccess: "活動已刪除！"
+            deleteSuccess: "活動已刪除！",
+            resetData: "一鍵重設所有資料",
+            confirmReset: "確定要重設所有資料嗎？這將永久刪除所有日程、完成進度及名字記錄，且無法復原！",
+            resetSuccess: "資料已完全重設！🧹"
           },
           en: {
             title: "Kiddo Summer Planner",
@@ -123,7 +126,10 @@
             langToggle: "English / 繁中",
             required: "Required fields",
             addSuccess: "Activity added successfully! 🎒",
-            deleteSuccess: "Activity deleted!"
+            deleteSuccess: "Activity deleted!",
+            resetData: "One-click Reset All Data",
+            confirmReset: "Are you sure you want to reset all data? This will permanently delete all schedules, progress, and names!",
+            resetSuccess: "All data reset successfully! 🧹"
           }
         };
 
@@ -148,6 +154,7 @@
                 selectedEvent: null,
                 toastMessage: '',
                 translatingField: '', // Track which field is translating
+                showResetConfirm: false, // Control the warning banner display
                 t: t,
                 CATEGORIES: CATEGORIES,
                 
@@ -381,6 +388,16 @@
                 saveState() {
                     localStorage.setItem('kiddo_events', JSON.stringify(this.events));
                     localStorage.setItem('kiddo_completed', JSON.stringify(this.completedInstances));
+                },
+
+                resetAllData() {
+                    this.events = [];
+                    this.completedInstances = [];
+                    this.kidName = '';
+                    this.saveState();
+                    localStorage.removeItem('kiddo_kid_name');
+                    this.showResetConfirm = false;
+                    this.showToast(this.t[this.lang].resetSuccess);
                 },
 
                 resetForm(customDate) {
@@ -1204,6 +1221,39 @@
                 💡 <strong x-text="lang === 'zh' ? 'Google Calendar / ICS 說明：' : 'Helper\'s Guide:'"></strong> <br />
                 <span x-text="lang === 'zh' ? '1. 【匯出】：按「匯出日曆 (ICS)」下載檔案，可匯入 Google Calendar 設定網頁。' : '1. [Export]: Press \'Export Calendar (ICS)\' to download, then import via Google Calendar web settings.'"></span><br />
                 <span x-text="lang === 'zh' ? '2. 【匯入】：直接點擊「匯入資料 (JSON/ICS)」按鈕，選取你從 Google Calendar 匯出的 .ics 檔案，行程將瞬間同步到此網頁！' : '2. [Import]: Directly tap \'Import Data (JSON/ICS)\' and select a .ics file exported from Google Calendar to instantly sync activities!'"></span>
+            </div>
+
+            <!-- 一鍵重設所有資料 / One-click Reset All Data -->
+            <div class="mt-5 pt-4 border-t border-dashed border-red-200">
+                <div x-show="!showResetConfirm">
+                    <button @click="showResetConfirm = true"
+                            class="w-full bg-red-50 hover:bg-red-100 text-red-600 border-2 border-red-200 hover:border-red-300 font-black py-3 px-4 rounded-2xl text-sm flex items-center justify-center gap-2 transition active:scale-95 shadow-sm">
+                        <i class="fa-solid fa-trash-can text-base animate-pulse"></i>
+                        <span x-text="t[lang].resetData"></span>
+                    </button>
+                </div>
+                
+                <div x-show="showResetConfirm" 
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 transform scale-95"
+                     x-transition:enter-end="opacity-100 transform scale-100"
+                     class="bg-red-50 border-2 border-red-300 rounded-2xl p-4 text-left space-y-3 shadow-inner"
+                     style="display: none;">
+                    <p class="text-sm font-black text-red-700 flex items-start gap-2 leading-relaxed">
+                        <i class="fa-solid fa-triangle-exclamation text-lg text-red-500 shrink-0 mt-0.5 animate-bounce"></i>
+                        <span x-text="t[lang].confirmReset"></span>
+                    </p>
+                    <div class="flex gap-2.5">
+                        <button type="button" @click="showResetConfirm = false"
+                                class="flex-1 bg-white hover:bg-slate-100 text-slate-700 border-2 border-slate-200 font-black py-2.5 rounded-xl text-xs transition active:scale-95 text-center">
+                            <span x-text="t[lang].cancel"></span>
+                        </button>
+                        <button type="button" @click="resetAllData()"
+                                class="flex-1 bg-red-600 hover:bg-red-700 text-white font-black py-2.5 rounded-xl text-xs transition active:scale-95 shadow-md text-center">
+                            <span x-text="lang === 'zh' ? '確認重設' : 'Confirm Reset'"></span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
